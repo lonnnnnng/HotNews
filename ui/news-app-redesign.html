@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>聚合热闻 UI Redesign</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap");
+
+    :root {
+      --ink: #12100d;
+      --ink-2: #38342f;
+      --muted: #746f67;
+      --paper: #faf8f2;
+      --panel: #fffdf8;
+      --line: #ded8cb;
+      --red: #c8252b;
+      --red-deep: #84191d;
+      --jade: #0d7d69;
+      --cobalt: #2059b7;
+      --gold: #c9942f;
+      --mist: #eef3ed;
+      --shadow: 0 18px 46px rgba(83, 73, 58, .16);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Noto Serif SC", "Songti SC", serif;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(200, 37, 43, .14), transparent 28%),
+        radial-gradient(circle at 82% 18%, rgba(13, 125, 105, .16), transparent 30%),
+        linear-gradient(120deg, #eeede7, #f8f4ea 45%, #e9eee9);
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .46;
+      mix-blend-mode: multiply;
+      background-image:
+        linear-gradient(rgba(18,16,13,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(18,16,13,.04) 1px, transparent 1px);
+      background-size: 38px 38px;
+    }
+
+    .stage {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      padding: 34px 22px 42px;
+      display: grid;
+      grid-template-columns: 1fr 430px;
+      gap: 38px;
+      align-items: start;
+    }
+
+    .brief {
+      padding: 20px 0 0;
+      position: sticky;
+      top: 28px;
+    }
+
+    .seal {
+      width: 92px;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      background: var(--red);
+      color: #fff9ee;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.08;
+      letter-spacing: 0;
+      box-shadow: 12px 14px 0 rgba(18,16,13,.09);
+      transform: rotate(-3deg);
+    }
+
+    .brief h1 {
+      margin: 34px 0 14px;
+      font-size: clamp(42px, 7vw, 84px);
+      line-height: .96;
+      letter-spacing: 0;
+      font-weight: 900;
+    }
+
+    .brief p {
+      max-width: 560px;
+      margin: 0;
+      color: var(--ink-2);
+      font-size: 18px;
+      line-height: 1.9;
+    }
+
+    .system-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .chip {
+      border: 1px solid rgba(18,16,13,.2);
+      background: rgba(255,253,248,.66);
+      border-radius: 999px;
+      padding: 9px 13px;
+      font-family: "IBM Plex Sans Condensed", sans-serif;
+      font-weight: 700;
+      color: var(--ink-2);
+      box-shadow: 0 5px 0 rgba(18,16,13,.05);
+    }
+
+    .phone {
+      width: min(430px, calc(100vw - 28px));
+      margin: 0 auto;
+      border-radius: 42px;
+      padding: 13px;
+      background: rgba(255,253,248,.82);
+      border: 1px solid rgba(222,216,203,.9);
+      box-shadow: var(--shadow);
+      position: relative;
+    }
+
+    .screen {
+      height: 880px;
+      max-height: calc(100vh - 48px);
+      min-height: 720px;
+      border-radius: 31px;
+      overflow: hidden;
+      position: relative;
+      background: var(--paper);
+      border: 1px solid rgba(255,255,255,.18);
+    }
+
+    .screen::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(18,16,13,.05) 1px, transparent 1px) 0 0 / 24px 24px,
+        radial-gradient(circle at 85% 2%, rgba(201,148,47,.24), transparent 34%);
+      opacity: .8;
+    }
+
+    .app {
+      position: relative;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 20px 20px 12px;
+      background: linear-gradient(180deg, rgba(250,248,242,.96), rgba(250,248,242,.72));
+      backdrop-filter: blur(12px);
+      z-index: 3;
+      border-bottom: 1px solid rgba(18,16,13,.08);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mark {
+      width: 39px;
+      height: 39px;
+      display: grid;
+      place-items: center;
+      background: #fffaf2;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      font-weight: 900;
+      border-radius: 12px;
+      box-shadow: 3px 3px 0 rgba(200,37,43,.2);
+      flex: 0 0 auto;
+    }
+
+    .brand-title {
+      font-weight: 900;
+      font-size: 22px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .brand-sub {
+      margin-top: 5px;
+      color: var(--muted);
+      font: 700 11px/1 "IBM Plex Sans Condensed", sans-serif;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .pulse {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font: 700 12px/1 "IBM Plex Sans Condensed", sans-serif;
+      box-shadow: 0 8px 20px rgba(18,16,13,.06);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: var(--jade);
+      box-shadow: 0 0 0 5px rgba(13,125,105,.14);
+      animation: breathe 1.8s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      50% { transform: scale(.7); opacity: .7; }
+    }
+
+    .ticker {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .ticker-title {
+      font-size: 27px;
+      font-weight: 900;
+      line-height: 1.08;
+    }
+
+    .ticker-title span {
+      color: var(--red);
+    }
+
+    .score-card {
+      min-width: 72px;
+      border: 1px solid var(--ink);
+      border-radius: 16px;
+      padding: 9px 10px;
+      text-align: center;
+      background: #fffaf0;
+      box-shadow: 5px 5px 0 rgba(18,16,13,.1);
+    }
+
+    .score-card strong {
+      display: block;
+      font: 800 23px/1 "IBM Plex Sans Condensed", sans-serif;
+      color: var(--red);
+    }
+
+    .score-card small {
+      color: var(--muted);
+      font: 700 10px/1 "IBM Plex Sans Condensed", sans-serif;
+    }
+
+    main {
+      flex: 1;
+      overflow: auto;
+      padding: 14px 14px 104px;
+      scroll-behavior: smooth;
+    }
+
+    main::-webkit-scrollbar { width: 0; }
+
+    .view { display: none; animation: rise .42s ease both; }
+    .view.active { display: block; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .tools {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .search {
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      padding: 0 13px;
+      gap: 10px;
+      background: rgba(255,255,255,.78);
+      box-shadow: 0 12px 26px rgba(18,16,13,.05);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .icon {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .round-btn,
+    .mini-btn {
+      border: 0;
+      cursor: pointer;
+      background: rgba(255,253,248,.92);
+      color: var(--ink-2);
+      border: 1px solid var(--line);
+      display: inline-grid;
+      place-items: center;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .round-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 16px;
+      box-shadow: 0 8px 18px rgba(18,16,13,.06);
+    }
+
+    .round-btn:hover,
+    .mini-btn:hover,
+    .nav button:hover {
+      transform: translateY(-2px);
+    }
+
+    .segments,
+    .scope-row {
+      display: flex;
+      gap: 7px;
+      overflow: auto;
+      padding: 3px 1px 12px;
+    }
+
+    .segments::-webkit-scrollbar,
+    .scope-row::-webkit-scrollbar { width: 0; height: 0; }
+
+    .seg,
+    .scope {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.72);
+      border-radius: 999px;
+      padding: 9px 12px;
+      white-space: nowrap;
+      color: var(--ink-2);
+      font: 700 12px/1 "IBM Plex Sans Condensed", sans-serif;
+    }
+
+    .seg.active,
+    .scope.active {
+      border-color: rgba(200,37,43,.28);
+      color: var(--red-deep);
+      background: rgba(200,37,43,.08);
+      box-shadow: none;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 2px 0 12px;
+    }
+
+    .stat {
+      border-radius: 16px;
+      padding: 12px 10px;
+      background: rgba(255,255,255,.76);
+      border: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font: 800 22px/1 "IBM Plex Sans Condensed", sans-serif;
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .quick {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 0 0 14px;
+    }
+
+    .mini-btn {
+      min-height: 40px;
+      border-radius: 14px;
+      font: 700 12px/1 "IBM Plex Sans Condensed", sans-serif;
+      gap: 5px;
+      grid-auto-flow: column;
+    }
+
+    .mini-btn.secondary {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+
+    .lead {
+      border-radius: 24px;
+      background: rgba(255,253,248,.94);
+      color: var(--ink);
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 12px 28px rgba(18,16,13,.07);
+      border: 1px solid var(--line);
+      margin-bottom: 12px;
+    }
+
+    .lead::after {
+      content: "";
+      position: absolute;
+      right: -54px;
+      top: -42px;
+      width: 180px;
+      aspect-ratio: 1;
+      border: 1px solid rgba(255,253,248,.18);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, transparent 36%, rgba(255,253,248,.09) 37% 38%, transparent 39%);
+    }
+
+    .tagline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--red);
+      font: 700 12px/1 "IBM Plex Sans Condensed", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .lead h2 {
+      margin: 12px 0 10px;
+      font-size: 24px;
+      line-height: 1.28;
+      letter-spacing: 0;
+    }
+
+    .lead p {
+      margin: 0;
+      color: var(--ink-2);
+      line-height: 1.72;
+      font-size: 14px;
+    }
+
+    .actions {
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .pill-btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 13px;
+      background: #fff;
+      color: var(--ink-2);
+      border: 1px solid var(--line);
+      font: 700 11px/1 "IBM Plex Sans Condensed", sans-serif;
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .pill-btn.ghost {
+      background: rgba(255,253,248,.68);
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+
+    .news-card {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      background: rgba(255,253,248,.9);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 14px;
+      margin-bottom: 10px;
+      box-shadow: 0 10px 26px rgba(18,16,13,.06);
+    }
+
+    .rank {
+      width: 34px;
+      height: 34px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      color: var(--paper);
+      background: var(--red);
+      font: 800 18px/1 "IBM Plex Sans Condensed", sans-serif;
+    }
+
+    .news-card h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.42;
+    }
+
+    .meta {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      color: var(--muted);
+      font: 700 11px/1 "IBM Plex Sans Condensed", sans-serif;
+    }
+
+    .badge {
+      padding: 6px 8px;
+      border-radius: 999px;
+      background: var(--mist);
+      color: var(--ink-2);
+    }
+
+    .badge.red {
+      background: rgba(200,37,43,.1);
+      color: var(--red-deep);
+    }
+
+    .topic-card,
+    .report-card,
+    .source-card,
+    .setting-card {
+      border-radius: 24px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: rgba(255,253,248,.88);
+      border: 1px solid var(--line);
+      box-shadow: 0 12px 30px rgba(18,16,13,.06);
+    }
+
+    .topic-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .heat {
+      min-width: 54px;
+      height: 54px;
+      border-radius: 17px;
+      display: grid;
+      place-items: center;
+      background: var(--red);
+      color: var(--paper);
+      font: 800 20px/1 "IBM Plex Sans Condensed", sans-serif;
+      box-shadow: 5px 5px 0 rgba(18,16,13,.1);
+    }
+
+    .topic-card h3,
+    .report-card h3,
+    .source-card h3,
+    .setting-card h3 {
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.32;
+    }
+
+    .topic-card ul {
+      margin: 12px 0 0;
+      padding: 0 0 0 18px;
+      color: var(--ink-2);
+      line-height: 1.75;
+      font-size: 13px;
+    }
+
+    .report-card {
+      background:
+        linear-gradient(180deg, rgba(255,253,248,.94), rgba(246,246,239,.92)),
+        repeating-linear-gradient(0deg, transparent 0 34px, rgba(18,16,13,.05) 35px);
+    }
+
+    .report-body {
+      margin-top: 13px;
+      border-left: 4px solid var(--red);
+      padding-left: 12px;
+      color: var(--ink-2);
+      line-height: 1.82;
+      font-size: 14px;
+    }
+
+    .archive {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .archive-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    .source-card {
+      display: grid;
+      gap: 12px;
+    }
+
+    .health {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .health-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 99px;
+      background: var(--jade);
+      box-shadow: 0 0 0 6px rgba(13,125,105,.1);
+    }
+
+    .health small,
+    .source-card p,
+    .setting-card p,
+    .archive-row small {
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.6;
+      font-size: 12px;
+    }
+
+    .settings-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .field label {
+      display: block;
+      color: var(--muted);
+      font: 700 10px/1 "IBM Plex Sans Condensed", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .field div {
+      margin-top: 7px;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .nav {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 7px;
+      border-radius: 25px;
+      padding: 9px;
+      background: rgba(255,253,248,.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 14px 34px rgba(18,16,13,.11);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      display: grid;
+      gap: 5px;
+      justify-items: center;
+      align-content: center;
+      min-height: 50px;
+      border-radius: 18px;
+      font: 700 10px/1 "IBM Plex Sans Condensed", sans-serif;
+      transition: .18s ease;
+      cursor: pointer;
+    }
+
+    .nav button.active {
+      background: rgba(200,37,43,.08);
+      color: var(--red-deep);
+      border: 1px solid rgba(200,37,43,.22);
+      box-shadow: none;
+    }
+
+    .nav .icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    @media (max-width: 900px) {
+      .stage {
+        grid-template-columns: 1fr;
+        padding-top: 18px;
+      }
+
+      .brief {
+        position: static;
+        padding: 0;
+      }
+
+      .brief h1 {
+        margin-top: 22px;
+      }
+    }
+
+    @media (max-width: 460px) {
+      .stage { padding: 0; }
+      .brief { display: none; }
+      .phone {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .screen {
+        height: 100vh;
+        max-height: none;
+        min-height: 0;
+        border-radius: 0;
+        border: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <aside class="brief">
+      <div class="seal">热闻</div>
+      <h1>给新闻应用一个编辑台的骨架。</h1>
+      <p>这版视觉把“聚合热闻”从原生表单堆叠，改成更像移动新闻指挥台的体验：高密度、强层级、可扫读，重要操作固定在用户自然阅读路径上。</p>
+      <div class="system-strip">
+        <span class="chip">Editorial Command</span>
+        <span class="chip">Live Diagnostics</span>
+        <span class="chip">AI Critique</span>
+        <span class="chip">TTS Queue</span>
+      </div>
+    </aside>
+
+    <section class="phone" aria-label="聚合热闻移动端视觉稿">
+      <div class="screen">
+        <div class="app">
+          <header>
+            <div class="topbar">
+              <div class="brand">
+                <div class="mark">聚</div>
+                <div>
+                  <div class="brand-title">聚合热闻</div>
+                  <div class="brand-sub">Domestic News Desk</div>
+                </div>
+              </div>
+              <div class="pulse"><span class="dot"></span> LIVE 10m</div>
+            </div>
+            <div class="ticker">
+              <div class="ticker-title">217 条稿件<br><span>4 个来源在线</span></div>
+              <div class="score-card"><strong>76</strong><small>当前可见</small></div>
+            </div>
+          </header>
+
+          <main>
+            <section class="view active" id="news">
+              <div class="tools">
+                <div class="search">
+                  <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                  标题 / 摘要 / 来源 / 范围
+                </div>
+                <button class="round-btn" title="刷新">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.6 6.1"/><path d="M3 12a9 9 0 0 1 15.6-6.1"/><path d="M18 3v5h-5"/><path d="M6 21v-5h5"/></svg>
+                </button>
+              </div>
+
+              <div class="segments">
+                <button class="seg active">全部</button>
+                <button class="seg">收藏</button>
+                <button class="seg">未读</button>
+              </div>
+              <div class="scope-row">
+                <button class="scope">全部范围</button>
+                <button class="scope active">国内</button>
+                <button class="scope">国际</button>
+                <button class="scope">综合</button>
+              </div>
+
+              <div class="stats">
+                <div class="stat"><strong>76</strong><span>当前可见</span></div>
+                <div class="stat"><strong>0</strong><span>未读</span></div>
+                <div class="stat"><strong>0</strong><span>收藏</span></div>
+              </div>
+
+              <div class="quick">
+                <button class="mini-btn secondary">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>可见已读
+                </button>
+                <button class="mini-btn secondary">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-1.5Z"/><path d="M8 7h6"/></svg>可见未读
+                </button>
+                <button class="mini-btn">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M8 7h12"/><path d="M8 12h12"/><path d="M8 17h12"/><path d="M4 7h.01"/><path d="M4 12h.01"/><path d="M4 17h.01"/></svg>复制标题
+                </button>
+              </div>
+
+              <article class="lead">
+                <div class="tagline"><svg class="icon" viewBox="0 0 24 24"><path d="M13 2 3 14h8l-1 8 11-13h-8l1-7Z"/></svg> 当前新闻稿</div>
+                <h2>织密新一代通信网聚力扩内需，千行百业因“网”而通。</h2>
+                <p>新一代通信网以通信技术创新和新型应用需求为驱动，服务于经济社会数智化转型。</p>
+                <div class="actions">
+                  <button class="pill-btn"><svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>锐评</button>
+                  <button class="pill-btn ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>播报</button>
+                  <button class="pill-btn ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4"/><path d="M6 12a3 3 0 1 0 2.83 4"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></svg>分享</button>
+                </div>
+              </article>
+
+              <article class="news-card">
+                <div class="rank">1</div>
+                <div>
+                  <h3>优化营商环境，促进企业健康发展</h3>
+                  <div class="meta"><span class="badge red">央视网新闻</span><span class="badge">综合</span><span class="badge">06:40</span></div>
+                </div>
+              </article>
+              <article class="news-card">
+                <div class="rank">2</div>
+                <div>
+                  <h3>倒计时 30 天，第四届链博会有哪些看点</h3>
+                  <div class="meta"><span class="badge red">央视网新闻</span><span class="badge">综合</span><span class="badge">06:37</span></div>
+                </div>
+              </article>
+              <article class="news-card">
+                <div class="rank">3</div>
+                <div>
+                  <h3>各地一批重大工程迎来新进展</h3>
+                  <div class="meta"><span class="badge red">央视网国内</span><span class="badge">国内</span><span class="badge">05:58</span></div>
+                </div>
+              </article>
+            </section>
+
+            <section class="view" id="hot">
+              <div class="tools">
+                <div class="search">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+                  热点聚合基于当前筛选池
+                </div>
+                <button class="round-btn" title="分享热点"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4"/><path d="M6 12a3 3 0 1 0 2.83 4"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></svg></button>
+              </div>
+              <article class="topic-card">
+                <div class="topic-head">
+                  <h3>通信网 / 城市地下 / 重大工程</h3>
+                  <div class="heat">92</div>
+                </div>
+                <ul>
+                  <li>多地重大工程迎来阶段性进展</li>
+                  <li>新一代通信网服务数智化转型</li>
+                  <li>城市地下管网投资规模持续增长</li>
+                </ul>
+              </article>
+              <article class="topic-card">
+                <div class="topic-head">
+                  <h3>强降雨 / 应急救援 / 生命线</h3>
+                  <div class="heat" style="background:var(--jade)">74</div>
+                </div>
+                <ul>
+                  <li>多地启动防汛应急响应</li>
+                  <li>直升机参与打通空中救援通道</li>
+                </ul>
+              </article>
+              <article class="topic-card">
+                <div class="topic-head">
+                  <h3>教育 / 民生 / 公共服务</h3>
+                  <div class="heat" style="background:var(--cobalt)">61</div>
+                </div>
+                <ul>
+                  <li>拟设本科高等学校名单公布</li>
+                  <li>基本公共服务常住地供给推进</li>
+                </ul>
+              </article>
+            </section>
+
+            <section class="view" id="briefing">
+              <article class="report-card">
+                <h3>聚合热闻今日日报</h3>
+                <div class="meta"><span class="badge red">80 条样本</span><span class="badge">国内范围</span><span class="badge">自动生成</span></div>
+                <div class="report-body">
+                  一、今日概览：当前新闻池以工程建设、民生服务和应急治理为主。<br>
+                  二、热点话题：通信网、城市地下管网、强降雨应对持续升温。<br>
+                  三、稍后关注：政策落地进度、地方执行反馈和多来源复核。
+                </div>
+                <div class="actions">
+                  <button class="pill-btn"><svg class="icon" viewBox="0 0 24 24"><path d="M8 17h8"/><path d="M8 13h8"/><path d="M8 9h5"/><path d="M6 3h9l3 3v15H6z"/></svg>复制日报</button>
+                  <button class="pill-btn ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>播报日报</button>
+                </div>
+              </article>
+              <article class="report-card">
+                <h3>日报归档</h3>
+                <div class="archive">
+                  <div class="archive-row"><div><strong>日报 2026-05-23 06:53</strong><br><small>概览 / 热点 / 重点新闻 / 稍后关注</small></div><button class="mini-btn secondary">打开</button></div>
+                  <div class="archive-row"><div><strong>日报 2026-05-22 21:10</strong><br><small>国内 / 国际混合筛选</small></div><button class="mini-btn secondary">打开</button></div>
+                </div>
+              </article>
+            </section>
+
+            <section class="view" id="sources">
+              <article class="source-card">
+                <div class="health">
+                  <span class="health-dot"></span>
+                  <div><h3>央视网新闻</h3><small>综合 · CCTV_JSONP · 成功 80 条 · 06:53</small></div>
+                  <button class="mini-btn secondary">测试</button>
+                </div>
+                <p>https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/news_1.jsonp</p>
+              </article>
+              <article class="source-card">
+                <div class="health">
+                  <span class="health-dot"></span>
+                  <div><h3>央视网国内</h3><small>国内 · CCTV_JSONP · 成功 80 条 · 06:53</small></div>
+                  <button class="mini-btn secondary">测试</button>
+                </div>
+                <p>范围页用诊断状态做第一层扫读，编辑/停用/删除收进操作区。</p>
+              </article>
+              <article class="source-card">
+                <div class="health">
+                  <span class="health-dot" style="background:var(--gold)"></span>
+                  <div><h3>中国日报 China</h3><small>国内 · RSS · 成功 100 条 · 06:53</small></div>
+                  <button class="mini-btn secondary">测试</button>
+                </div>
+                <p>支持导入/导出 JSON，后续可以做成模板包。</p>
+              </article>
+            </section>
+
+            <section class="view" id="settings">
+              <article class="setting-card">
+                <h3>新闻锐评大模型</h3>
+                <p>OpenAI-compatible Chat Completions，自检直接使用当前表单配置。</p>
+                <div class="settings-grid">
+                  <div class="field"><label>Endpoint</label><div>https://token-plan-sgp.xiaomimimo.com</div></div>
+                  <div class="field"><label>Model</label><div>mimo-v2.5-pro</div></div>
+                </div>
+                <div class="actions">
+                  <button class="pill-btn"><svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>保存</button>
+                  <button class="pill-btn ghost" style="color:var(--ink);background:#fff;border-color:var(--line)"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>测试锐评</button>
+                </div>
+              </article>
+              <article class="setting-card">
+                <h3>语音播报</h3>
+                <p>默认使用 MiMo Chat Audio；远程不可用时自动回退 Android 本地 TTS。</p>
+                <div class="settings-grid">
+                  <div class="field"><label>Mode</label><div>远程语音模型</div></div>
+                  <div class="field"><label>Voice</label><div>mimo_default / mimo-v2.5-tts</div></div>
+                </div>
+                <div class="actions">
+                  <button class="pill-btn"><svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>保存</button>
+                  <button class="pill-btn ghost" style="color:var(--ink);background:#fff;border-color:var(--line)"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>测试语音</button>
+                </div>
+              </article>
+            </section>
+          </main>
+
+          <nav class="nav" aria-label="主导航">
+            <button class="active" data-tab="news">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M4 22V4a2 2 0 0 1 2-2h12v20"/><path d="M8 6h6"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>
+              新闻
+            </button>
+            <button data-tab="hot">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M8.5 14.5A4.5 4.5 0 0 0 12 22a7 7 0 0 0 7-7c0-5-5-8-5-13-3 2-5 5-5 9a4 4 0 0 0 .5 2"/></svg>
+              热点
+            </button>
+            <button data-tab="briefing">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M6 3h12v18H6z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h3"/></svg>
+              简报
+            </button>
+            <button data-tab="sources">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 20v-6"/><path d="M6 20V10"/><path d="M18 20V4"/></svg>
+              范围
+            </button>
+            <button data-tab="settings">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V22a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H2a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H8a1.7 1.7 0 0 0 1-1.6V2a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.6 1H22a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+              设置
+            </button>
+          </nav>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const tabs = document.querySelectorAll(".nav button");
+    const views = document.querySelectorAll(".view");
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tabs.forEach((item) => item.classList.remove("active"));
+        views.forEach((view) => view.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(tab.dataset.tab).classList.add("active");
+        document.querySelector("main").scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+  </script>
+</body>
+</html>
