@@ -18,6 +18,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.RippleDrawable
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -385,6 +386,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         if (active) Color.argb(48, 200, 37, 43) else null,
                         if (active) 1 else 0
                     )
+                    addClickFeedback(18)
                     addView(TabIconView(context, id, if (active) redDeep else muted), LinearLayout.LayoutParams(dp(18), dp(18)))
                     addView(TextView(context).apply {
                         text = label
@@ -504,6 +506,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isClickable = true
         isFocusable = true
         contentDescription = "热点话题 ${topic.title}"
+        addClickFeedback(24)
         setOnClickListener { showTopicActions(topic, rank) }
         val head = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -599,6 +602,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         elevation = dp(2).toFloat()
         isClickable = true
         isFocusable = true
+        addClickFeedback(24)
         setOnClickListener { showReportActions(report) }
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1057,6 +1061,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             row.addView(StrokeIconView(this, "chevron", muted), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
                 setMargins(dp(10), dp(9), 0, 0)
             })
+            row.isClickable = true
+            row.isFocusable = true
+            row.addClickFeedback(22)
             row.setOnClickListener {
                 pendingNewsListScrollY = scrollView.scrollY
                 selected = updateItemState(item.id, read = true)
@@ -1868,6 +1875,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isClickable = true
         isFocusable = true
         contentDescription = "范围${source.name}"
+        addClickFeedback(24)
         setOnClickListener { showSourceActions(source) }
         setOnLongClickListener {
             showSourceManagementActions()
@@ -2436,6 +2444,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isFocusable = true
         setPadding(dp(14), dp(12), dp(14), dp(12))
         background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        addClickFeedback(16)
         addView(StrokeIconView(context, item.icon, item.accent ?: inkSoft), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
             setMargins(0, 0, dp(10), 0)
         })
@@ -2815,6 +2824,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         stateListAnimator = null
         elevation = 0f
         background = InsetDrawable(rounded(Color.rgb(255, 254, 250), 14, line, 1), dp(3), 0, dp(3), 0)
+        addClickFeedback(14)
         setOnClickListener { action() }
     }
 
@@ -2842,6 +2852,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             dp(3),
             0
         )
+        addClickFeedback(999)
         setOnClickListener { action() }
     }
 
@@ -2865,6 +2876,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             line,
             1
         )
+        addClickFeedback(999)
         addView(StrokeIconView(context, icon, fg), LinearLayout.LayoutParams(dp(14), dp(14)).apply {
             setMargins(0, 0, dp(5), 0)
         })
@@ -2891,6 +2903,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         stateListAnimator = null
         elevation = 0f
         background = rounded(Color.argb(235, 255, 253, 248), 16, line, 1)
+        addClickFeedback(16)
         setOnClickListener { action() }
     }
 
@@ -2902,6 +2915,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         background = rounded(Color.argb(235, 255, 253, 248), 16, line, 1)
         elevation = 0f
         stateListAnimator = null
+        addClickFeedback(16)
         addView(StrokeIconView(context, icon, inkSoft), LinearLayout.LayoutParams(dp(17), dp(17)))
         setOnClickListener { action() }
     }
@@ -2916,6 +2930,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         elevation = 0f
         stateListAnimator = null
         setPadding(dp(10), 0, dp(10), 0)
+        addClickFeedback(14)
         addView(StrokeIconView(context, icon, inkSoft), LinearLayout.LayoutParams(dp(14), dp(14)).apply {
             setMargins(0, 0, dp(5), 0)
         })
@@ -2981,6 +2996,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (active) Color.argb(72, 200, 37, 43) else line,
             1
         )
+        addClickFeedback(999)
         setOnClickListener { action() }
     }
 
@@ -2994,6 +3010,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         typeface = if (active) condensedBold else condensed
         setTextColor(if (active) red else muted)
         background = rounded(if (active) Color.rgb(255, 247, 244) else panel, 18, if (active) Color.rgb(232, 190, 185) else line, 1)
+        addClickFeedback(18)
+    }
+
+    private fun View.addClickFeedback(radiusDp: Int = 16) {
+        foreground = RippleDrawable(
+            ColorStateList.valueOf(Color.argb(38, 18, 16, 13)),
+            null,
+            rounded(Color.WHITE, radiusDp)
+        )
     }
 
     private fun rounded(color: Int, radiusDp: Int, strokeColor: Int? = null, strokeDp: Int = 0): GradientDrawable {
