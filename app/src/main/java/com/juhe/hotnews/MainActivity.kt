@@ -215,6 +215,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var items: List<NewsItem> = emptyList()
     private var selected: NewsItem? = null
     private var lastCritique: String = ""
+    private var isNewsDetailOpen: Boolean = false
+    private var pendingNewsListScrollY: Int? = null
+    private var isNewsRefreshing: Boolean = false
+    private var isBriefingRefreshing: Boolean = false
+    private var lastNewsUpdatedAtText: String = ""
     private var keywordFilter: String = ""
     private var feedMode: String = "all"
     private var scopeFilter: String = "all"
@@ -260,6 +265,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tts?.shutdown()
         mediaPlayer?.release()
         super.onDestroy()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (isNewsDetailOpen) {
+            returnToNewsList()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     override fun onInit(status: Int) {
@@ -398,22 +412,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showNews() {
         activeTab = "news"
+        isNewsDetailOpen = false
         swipeRefresh.isEnabled = true
+        tabBar.visibility = View.VISIBLE
         if (feedMode != "all") {
             feedMode = "all"
             store.saveFeedMode(feedMode)
         }
         content.removeAllViews()
         renderTabs()
+        content.setPadding(dp(14), dp(14), dp(14), dp(20))
         renderFilter()
         renderScopeFilter()
-        renderVisibleBatchActions()
+        renderNewsUpdateState()
         renderNewsList()
     }
 
     private fun showHotTopics() {
         activeTab = "hot"
+        isNewsDetailOpen = false
         swipeRefresh.isEnabled = false
+        tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
@@ -434,7 +453,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showBriefing() {
         activeTab = "briefing"
+        isNewsDetailOpen = false
         swipeRefresh.isEnabled = false
+        tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
@@ -552,7 +573,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     representative?.let {
                         selected = updateItemState(it.id, read = true)
                         lastCritique = ""
-                        showNews()
+                        selected?.let { current -> showNewsDetail(current) }
                     } ?: toast("暂无代表稿")
                 },
                 DialogActionItem("播报代表稿", "speaker") {
@@ -579,13 +600,34 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isClickable = true
         isFocusable = true
         setOnClickListener { showReportActions(report) }
-        addView(TextView(context).apply {
-            text = "聚合热闻今日日报"
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            typeface = serifBold
-            includeFontPadding = false
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(context).apply {
+                text = "聚合热闻今日日报"
+                setTextColor(ink)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                typeface = serifBold
+                includeFontPadding = false
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(iconMiniButton(if (isBriefingRefreshing) "更新中" else "更新", "refresh") {
+                if (isBriefingRefreshing) {
+                    toast("正在更新简报")
+                    return@iconMiniButton
+                }
+                isBriefingRefreshing = true
+                status.text = "正在重新聚合今日日报..."
+                showBriefing()
+                refreshNews()
+            }, LinearLayout.LayoutParams(dp(if (isBriefingRefreshing) 96 else 86), dp(36)).apply {
+                setMargins(dp(10), 0, 0, 0)
+            })
         })
+        if (isBriefingRefreshing) {
+            addView(briefingRefreshProgress(), LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(0, dp(12), 0, 0)
+            })
+        }
         addView(metaBadges(listOf("${visibleItems().ifEmpty { items }.take(REPORT_ITEM_LIMIT).size} 条样本", reportScopeLabel(), "自动生成")), LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, dp(10), 0, dp(10))
         })
@@ -636,6 +678,26 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 })
             }
         })
+    }
+
+    private fun briefingRefreshProgress(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        addView(ProgressBar(context).apply {
+            isIndeterminate = true
+            indeterminateTintList = ColorStateList.valueOf(redDeep)
+        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+            setMargins(0, 0, dp(10), 0)
+        })
+        addView(TextView(context).apply {
+            text = "正在抓取来源并重新生成日报..."
+            setTextColor(inkSoft)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = serifBold
+            includeFontPadding = false
+        }, LinearLayout.LayoutParams(0, -2, 1f))
     }
 
     private fun reportScopeLabel(): String = when {
@@ -847,7 +909,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         shell.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(shell, LinearLayout.LayoutParams(0, dp(44), 1f))
-        row.addView(roundIconButton("刷新", "refresh") {
+        row.addView(roundIconButton(if (isNewsRefreshing) "更新中" else "刷新", "refresh") {
+            if (isNewsRefreshing) {
+                toast("正在更新新闻列表")
+                return@roundIconButton
+            }
+            isNewsRefreshing = true
+            status.text = "正在更新新闻列表..."
+            showNews()
             refreshNews()
         }, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             setMargins(dp(10), 0, 0, 0)
@@ -889,30 +958,47 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun showReadableTab() {
         when (activeTab) {
             "briefing" -> showBriefing()
+            "news" -> showCurrentNewsSurface()
             else -> showNews()
         }
     }
 
-    private fun renderVisibleBatchActions() {
+    private fun renderNewsUpdateState() {
         updateHeaderSummary()
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp(14))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
         }
-        row.addView(iconMiniButton("可见已读", "check") { updateVisibleReadState(read = true) }, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            setMargins(0, 0, dp(4), 0)
+        if (isNewsRefreshing) {
+            row.addView(ProgressBar(this).apply {
+                isIndeterminate = true
+                indeterminateTintList = ColorStateList.valueOf(redDeep)
+            }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+                setMargins(0, 0, dp(10), 0)
+            })
+        } else {
+            row.addView(StrokeIconView(this, "refresh", muted), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                setMargins(0, 0, dp(10), 0)
+            })
+        }
+        row.addView(TextView(this).apply {
+            text = if (isNewsRefreshing) {
+                "正在抓取来源并更新新闻列表..."
+            } else {
+                "更新时间：${lastNewsUpdatedAtText.ifBlank { reportUpdatedAtText() }}"
+            }
+            setTextColor(if (isNewsRefreshing) inkSoft else muted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = if (isNewsRefreshing) serifBold else condensedBold
+            includeFontPadding = false
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(14))
         })
-        row.addView(iconMiniButton("可见未读", "briefing") { updateVisibleReadState(read = false) }, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            setMargins(dp(4), 0, dp(4), 0)
-        })
-        row.addView(iconMiniButton("复制标题", "briefing") {
-            val text = visibleHeadlinesText()
-            copyText("visible_headlines", text, "可见标题已复制")
-            if (text.isNotBlank()) status.text = "已复制当前可见 ${visibleItems().size} 条标题"
-        }, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            setMargins(dp(4), 0, 0, 0)
-        })
-        content.addView(row)
     }
 
     private fun renderNewsList() {
@@ -930,14 +1016,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
         visible.forEachIndexed { index, item ->
-            val isSelected = selected?.id == item.id
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(14), dp(14), dp(14), dp(14))
                 background = rounded(
-                    if (isSelected) Color.rgb(255, 249, 238) else Color.argb(230, 255, 253, 248),
+                    Color.argb(230, 255, 253, 248),
                     22,
-                    if (isSelected) Color.argb(88, 200, 37, 43) else line,
+                    line,
                     1
                 )
                 elevation = dp(2).toFloat()
@@ -957,7 +1042,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(context).apply {
                     text = item.title
-                    setTextColor(ink)
+                    setTextColor(if (item.read) inkSoft else ink)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
                     typeface = serifBold
                     setLineSpacing(0f, 1.18f)
@@ -969,12 +1054,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     setMargins(0, dp(8), 0, 0)
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(StrokeIconView(this, "chevron", muted), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+                setMargins(dp(10), dp(9), 0, 0)
+            })
             row.setOnClickListener {
-                val keepY = scrollView.scrollY
+                pendingNewsListScrollY = scrollView.scrollY
                 selected = updateItemState(item.id, read = true)
                 lastCritique = ""
-                showNews()
-                scrollView.post { scrollView.scrollTo(0, keepY) }
+                selected?.let { showNewsDetail(it) }
             }
             row.setOnLongClickListener {
                 selected = updateItemState(item.id, read = true)
@@ -984,9 +1071,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             content.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
                 setMargins(0, 0, 0, dp(10))
             })
-            if (isSelected) {
-                renderDetail(item, compact = true)
-            }
         }
     }
 
@@ -1049,6 +1133,167 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
     }
 
+    private fun showNewsDetail(item: NewsItem) {
+        activeTab = "news"
+        isNewsDetailOpen = true
+        swipeRefresh.isEnabled = false
+        tabBar.visibility = View.GONE
+        content.removeAllViews()
+        content.setPadding(dp(14), dp(14), dp(14), dp(24))
+        renderNewsDetailHeader(item)
+        renderNewsBodyCard(item)
+        renderCritiqueCard()
+        renderVoiceCard(item)
+        scrollView.post { scrollView.scrollTo(0, 0) }
+    }
+
+    private fun returnToNewsList() {
+        val restoreY = pendingNewsListScrollY
+        pendingNewsListScrollY = null
+        isNewsDetailOpen = false
+        tabBar.visibility = View.VISIBLE
+        showNews()
+        restoreY?.let { y ->
+            scrollView.post { scrollView.scrollTo(0, y) }
+        }
+    }
+
+    private fun renderNewsDetailHeader(item: NewsItem) {
+        content.addView(leadCard {
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(iconMiniButton("返回", "back") { returnToNewsList() }, LinearLayout.LayoutParams(dp(82), dp(36)))
+                addView(TextView(context).apply {
+                    text = "新闻详情"
+                    setTextColor(muted)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    typeface = condensedBold
+                    gravity = Gravity.END
+                    includeFontPadding = false
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+            })
+            addView(TextView(context).apply {
+                text = item.title
+                setTextColor(ink)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
+                typeface = serifBold
+                setLineSpacing(0f, 1.12f)
+                setPadding(0, dp(16), 0, dp(10))
+                includeFontPadding = false
+            })
+            addView(metaBadges(listOf(item.source, item.scope.ifBlank { "综合" }, item.publishedAt.ifBlank { "未知时间" })))
+        })
+    }
+
+    private fun renderNewsBodyCard(item: NewsItem) {
+        content.addView(leadCard {
+            addView(detailSectionTitle("新闻正文", "briefing"))
+            addView(TextView(context).apply {
+                text = item.summary.ifBlank { item.script }
+                setTextColor(inkSoft)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
+                typeface = serif
+                setLineSpacing(0f, 1.48f)
+                setPadding(0, dp(12), 0, 0)
+            })
+            val actions = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(16), 0, 0)
+            }
+            actions.addView(iconPillButton("复制", "briefing", ghost = true) { copySelected() }, pillWrapParams())
+            actions.addView(iconPillButton("分享", "share", ghost = true) { shareSelected() }, pillWrapParams())
+            actions.addView(iconPillButton("原文", "search", ghost = true) { openOriginal(item) }, pillWrapParams(0))
+            addView(HorizontalScrollView(context).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(actions)
+            })
+        })
+    }
+
+    private fun renderCritiqueCard() {
+        content.addView(leadCard {
+            addView(detailSectionTitle("大模型锐评", "edit"))
+            addView(TextView(context).apply {
+                text = lastCritique.ifBlank { "尚未生成锐评。点击下方按钮后，将使用设置中的新闻锐评模型基于当前新闻稿生成短评。" }
+                setTextColor(if (lastCritique.isBlank()) muted else inkSoft)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.8f)
+                typeface = serif
+                setLineSpacing(0f, 1.42f)
+                setPadding(0, dp(12), 0, 0)
+            })
+            val actions = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(16), 0, 0)
+            }
+            actions.addView(iconPillButton(if (lastCritique.isBlank()) "生成锐评" else "重新生成", "edit") { critiqueSelected() }, pillWrapParams())
+            actions.addView(iconPillButton("复制", "briefing", ghost = true) {
+                copyText("news_critique", lastCritique, "锐评已复制")
+            }, pillWrapParams(0))
+            addView(actions)
+        })
+    }
+
+    private fun renderVoiceCard(item: NewsItem) {
+        content.addView(leadCard {
+            addView(detailSectionTitle("语音播报", "speaker"))
+            addView(TextView(context).apply {
+                val mode = if (store.voiceSettings().mode == "local") "Android 本地 TTS" else "远程语音模型"
+                text = "当前将使用 $mode 播报新闻稿；若已生成锐评，会自动追加到播报内容后。"
+                setTextColor(muted)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                typeface = serif
+                setLineSpacing(0f, 1.22f)
+                setPadding(0, dp(10), 0, dp(12))
+            })
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                listOf(18, 28, 20, 34, 24, 30, 16).forEachIndexed { index, height ->
+                    addView(View(context).apply {
+                        background = rounded(
+                            if (index % 2 == 0) Color.argb(94, 200, 37, 43) else Color.argb(84, 13, 125, 105),
+                            999
+                        )
+                    }, LinearLayout.LayoutParams(dp(6), dp(height)).apply {
+                        setMargins(0, 0, dp(6), 0)
+                    })
+                }
+                addView(TextView(context).apply {
+                    text = item.title
+                    setTextColor(inkSoft)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                    typeface = serifBold
+                    setSingleLine(true)
+                    ellipsize = TextUtils.TruncateAt.END
+                    includeFontPadding = false
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+            })
+            val actions = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(16), 0, 0)
+            }
+            actions.addView(iconPillButton("开始播报", "speaker") { speakSelected() }, pillWrapParams())
+            actions.addView(iconPillButton("停止", "close", ghost = true) { stopSpeaking() }, pillWrapParams(0))
+            addView(actions)
+        })
+    }
+
+    private fun detailSectionTitle(label: String, icon: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(StrokeIconView(context, icon, redDeep), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+            setMargins(0, 0, dp(8), 0)
+        })
+        addView(TextView(context).apply {
+            text = label
+            setTextColor(ink)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+            typeface = serifBold
+            includeFontPadding = false
+        })
+    }
+
     private fun refreshNews(silent: Boolean = false) {
         if (!silent) status.text = "正在抓取已启用新闻范围..."
         scope.launch {
@@ -1056,9 +1301,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 withContext(Dispatchers.IO) { repo.fetchWithDiagnostics(store.sources().filter { it.enabled }) }
             }.onSuccess { result ->
                 swipeRefresh.isRefreshing = false
+                isNewsRefreshing = false
+                isBriefingRefreshing = false
                 store.saveSourceDiagnostics(result.diagnostics)
                 val fetched = result.items
                 if (fetched.isEmpty()) {
+                    lastNewsUpdatedAtText = reportUpdatedAtText()
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
                         items = cached
@@ -1071,13 +1319,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     when (activeTab) {
                         "briefing" -> showBriefing()
                         "sources" -> showSources()
-                        "news" -> showNews()
+                        "news" -> showCurrentNewsSurface()
                     }
                     return@onSuccess
                 }
                 items = mergeLocalState(fetched.distinctBy { it.id }.sortedByDescending { it.publishedAt }).take(NEWS_CACHE_LIMIT)
                 store.saveNewsCache(items)
                 keepSelectedIfVisible()
+                lastNewsUpdatedAtText = reportUpdatedAtText()
                 val okCount = result.diagnostics.count { it.success }
                 val failCount = result.diagnostics.count { !it.success }
                 status.text = "已汇总 ${items.size} 条，来源成功 $okCount 个、失败 $failCount 个；前台每 10 分钟自动更新"
@@ -1085,10 +1334,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 when (activeTab) {
                     "briefing" -> showBriefing()
                     "sources" -> showSources()
-                    "news" -> showNews()
+                    "news" -> showCurrentNewsSurface()
                 }
             }.onFailure {
                 swipeRefresh.isRefreshing = false
+                isNewsRefreshing = false
+                isBriefingRefreshing = false
                 if (!silent) {
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
@@ -1103,10 +1354,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     when (activeTab) {
                         "briefing" -> showBriefing()
                         "sources" -> showSources()
-                        "news" -> showNews()
+                        "news" -> showCurrentNewsSurface()
                     }
                 }
             }
+        }
+    }
+
+    private fun showCurrentNewsSurface() {
+        if (isNewsDetailOpen) {
+            val current = selected
+            if (current == null) {
+                showNews()
+            } else {
+                showNewsDetail(current)
+            }
+        } else {
+            showNews()
         }
     }
 
@@ -1138,6 +1402,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun reportUpdatedAtText(): String {
+        val calendar = java.util.Calendar.getInstance(TimeZone.getTimeZone("GMT+08:00"), Locale.CHINA)
+        val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).apply {
+            timeZone = TimeZone.getTimeZone("GMT+08:00")
+        }.format(calendar.time)
+        val weekday = when (calendar.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.MONDAY -> "星期一"
+            java.util.Calendar.TUESDAY -> "星期二"
+            java.util.Calendar.WEDNESDAY -> "星期三"
+            java.util.Calendar.THURSDAY -> "星期四"
+            java.util.Calendar.FRIDAY -> "星期五"
+            java.util.Calendar.SATURDAY -> "星期六"
+            else -> "星期日"
+        }
+        return "$time  $weekday"
+    }
+
     private fun briefingText(): String {
         val list = visibleItems().ifEmpty { items }.take(REPORT_ITEM_LIMIT)
         if (list.isEmpty()) {
@@ -1150,7 +1431,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
             .take(4)
             .joinToString("，") { "${it.key}${it.value}条" }
-        val newest = list.firstOrNull()?.publishedAt?.ifBlank { "未知时间" } ?: "未知时间"
+        val newest = reportUpdatedAtText()
         val headlines = list.take(12).mapIndexed { index, item ->
             "${index + 1}. ${item.title}（${item.source} / ${item.scope.ifBlank { "综合" }}）"
         }.joinToString("\n")
@@ -1173,7 +1454,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return "暂无可生成日报的新闻。请先刷新，或检查抓取范围是否启用。"
         }
         val topics = hotTopics().take(5)
-        val newest = list.firstOrNull()?.publishedAt?.ifBlank { "未知时间" } ?: "未知时间"
+        val newest = reportUpdatedAtText()
         val scopes = list.groupingBy { it.scope.ifBlank { "综合" } }.eachCount()
             .entries.sortedByDescending { it.value }
             .joinToString("，") { "${it.key}${it.value}条" }
@@ -1370,7 +1651,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }.onSuccess {
                 lastCritique = it
                 status.text = "锐评已生成"
-                showNews()
+                showCurrentNewsSurface()
             }.onFailure {
                 status.text = "锐评失败：${it.message ?: "未知错误"}"
             }
@@ -1521,7 +1802,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showSources() {
         activeTab = "sources"
+        isNewsDetailOpen = false
         swipeRefresh.isEnabled = false
+        tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
@@ -1857,7 +2140,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showSettings() {
         activeTab = "settings"
+        isNewsDetailOpen = false
         swipeRefresh.isEnabled = false
+        tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
@@ -2834,6 +3119,8 @@ private class StrokeIconView(context: Context, private val icon: String, color: 
         canvas.translate(left, top)
         canvas.scale(scale, scale)
         when (icon) {
+            "back" -> drawBack(canvas)
+            "chevron" -> drawChevron(canvas)
             "close" -> drawClose(canvas)
             "edit" -> drawEdit(canvas)
             "bolt" -> drawBolt(canvas)
@@ -2847,6 +3134,17 @@ private class StrokeIconView(context: Context, private val icon: String, color: 
             else -> drawSearch(canvas)
         }
         canvas.restore()
+    }
+
+    private fun drawBack(canvas: Canvas) {
+        canvas.drawLine(19f, 12f, 6f, 12f, stroke)
+        canvas.drawLine(6f, 12f, 12f, 6f, stroke)
+        canvas.drawLine(6f, 12f, 12f, 18f, stroke)
+    }
+
+    private fun drawChevron(canvas: Canvas) {
+        canvas.drawLine(9f, 6f, 15f, 12f, stroke)
+        canvas.drawLine(15f, 12f, 9f, 18f, stroke)
     }
 
     private fun drawSearch(canvas: Canvas) {
