@@ -1908,7 +1908,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         content.addView(settingCard(
             title = "应用更新",
-            desc = "从 GitHub Releases 检查流水线发布的 APK，新版本可直接下载并安装。",
+            desc = "从 GitHub Releases 检查公开发布的 APK，新版本可直接下载并安装。",
             fields = listOf(
                 "当前版本" to BuildConfig.VERSION_NAME,
                 "发布仓库" to GITHUB_REPO
@@ -3592,14 +3592,7 @@ object UpdateClient {
             setRequestProperty("Accept", "application/vnd.github+json")
         }
         if (conn.responseCode == 404) {
-            return ReleaseInfo(
-                tagName = "v${BuildConfig.VERSION_NAME}",
-                versionName = BuildConfig.VERSION_NAME,
-                name = "当前版本",
-                body = "当前仓库还没有可安装的 Release。",
-                apkUrl = "",
-                apkName = ""
-            )
+            error("GitHub 返回 404：仓库不存在或还没有 Release")
         }
         if (conn.responseCode !in 200..299) {
             val err = conn.errorStream?.bufferedReader()?.readText().orEmpty()

@@ -39,7 +39,7 @@ app/build/outputs/apk/debug/app-debug.apk
 指定版本号打包：
 
 ```bash
-./gradlew :app:assembleDebug --stacktrace -PVERSION_NAME=0.1.1 -PVERSION_CODE=2
+./gradlew :app:assembleDebug --stacktrace -PVERSION_NAME=0.1.5 -PVERSION_CODE=6
 ```
 
 ## GitHub Actions 打包
@@ -79,12 +79,12 @@ https://api.github.com/repos/lonnnnnng/HotNews/releases/latest
 - 点击下载后显示进度条，下载完成后通过 `FileProvider` 调起 Android 系统安装器。
 - 如果没有新版，提示已是最新版本。
 
-本地验证在线升级时，应使用同一签名链路。例如当前模拟器安装的是 debug 版 `0.1.0`，则测试 Release 中的新版 APK 也应使用本机 debug 签名：
+本地验证在线升级时，应使用同一签名链路。例如当前模拟器安装的是 debug 版 `0.1.4`，则测试 Release 中的新版 APK 也应使用本机 debug 签名：
 
 ```bash
-./gradlew :app:assembleDebug --stacktrace -PVERSION_NAME=0.1.1 -PVERSION_CODE=2
-gh release create v0.1.1 app/build/outputs/apk/debug/app-debug.apk#HotNews-v0.1.1-debug.apk \
-  --title "HotNews v0.1.1" \
+./gradlew :app:assembleDebug --stacktrace -PVERSION_NAME=0.1.5 -PVERSION_CODE=6
+gh release create v0.1.5 app/build/outputs/apk/debug/app-debug.apk#HotNews-v0.1.5-debug.apk \
+  --title "HotNews v0.1.5" \
   --notes "测试在线更新流程：设置页检测更新、下载进度、下载完成后调起安装器。"
 ```
 
