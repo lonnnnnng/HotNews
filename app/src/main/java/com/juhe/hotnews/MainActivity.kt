@@ -59,7 +59,10 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
+import java.net.URLDecoder
+import java.text.SimpleDateFormat
 import java.security.MessageDigest
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
@@ -1893,7 +1896,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun editSource(existing: NewsSource?) {
         val name = edit("名称", existing?.name.orEmpty())
         val scopeName = edit("范围标签，如 国内/国际/财经", existing?.scope ?: "综合")
-        val type = edit("类型：rss 或 cctv_jsonp", existing?.type ?: "rss")
+        val type = edit("类型：rss / cctv_jsonp / toutiao_hot / baidu_hot / kr36_flash", existing?.type ?: "rss")
         val url = edit("URL", existing?.url.orEmpty())
         val enabled = CheckBox(this).apply {
             text = "启用这个抓取范围"
@@ -1951,7 +1954,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun validateSource(source: NewsSource): String? {
         if (source.url.isBlank()) return "URL 不能为空"
         if (!source.url.startsWith("https://") && !source.url.startsWith("http://")) return "URL 必须以 http:// 或 https:// 开头"
-        if (source.type !in setOf("rss", "cctv_jsonp")) return "类型只能是 rss 或 cctv_jsonp"
+        if (source.type !in SUPPORTED_SOURCE_TYPES) return "类型只能是 ${SUPPORTED_SOURCE_TYPES.joinToString(" / ")}"
         return null
     }
 
@@ -2926,8 +2929,17 @@ class AppStore(context: Context) {
     fun ensureDefaults() {
         if (prefs.getString("sources", null) == null) {
             saveSources(defaultSources())
+            prefs.edit().putInt("source_template_version", DEFAULT_SOURCE_TEMPLATE_VERSION).apply()
         } else {
-            saveSources(sources())
+            val current = sources()
+            val templateVersion = prefs.getInt("source_template_version", 1)
+            if (templateVersion < DEFAULT_SOURCE_TEMPLATE_VERSION) {
+                val existingIds = current.map { it.id }.toSet()
+                saveSources(current + defaultSources().filterNot { it.id in existingIds })
+                prefs.edit().putInt("source_template_version", DEFAULT_SOURCE_TEMPLATE_VERSION).apply()
+            } else {
+                saveSources(current)
+            }
         }
     }
 
@@ -3152,7 +3164,10 @@ class AppStore(context: Context) {
         NewsSource("cctv-news", "央视网新闻", "https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/news_1.jsonp", "cctv_jsonp", "综合"),
         NewsSource("cctv-china", "央视网国内", "https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/china_1.jsonp", "cctv_jsonp", "国内"),
         NewsSource("cctv-world", "央视网国际", "https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/world_1.jsonp", "cctv_jsonp", "国际"),
-        NewsSource("china-daily-cn", "中国日报 China", "https://www.chinadaily.com.cn/rss/china_rss.xml", "rss", "国内")
+        NewsSource("china-daily-cn", "中国日报 China", "https://www.chinadaily.com.cn/rss/china_rss.xml", "rss", "国内"),
+        NewsSource("baidu-realtime", "百度热搜", "https://top.baidu.com/board?tab=realtime", "baidu_hot", "热榜"),
+        NewsSource("toutiao-hot", "今日头条热榜", "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", "toutiao_hot", "热榜"),
+        NewsSource("kr36-flash", "36氪快讯", "https://36kr.com/newsflashes", "kr36_flash", "科技")
     )
 }
 
@@ -3173,6 +3188,9 @@ class NewsRepository {
             runCatching {
                 val fetched = when (source.type.lowercase(Locale.ROOT)) {
                     "cctv_jsonp" -> fetchCctvJsonp(source)
+                    "toutiao_hot" -> fetchToutiaoHot(source)
+                    "baidu_hot" -> fetchBaiduHot(source)
+                    "kr36_flash" -> fetchKr36Flash(source)
                     else -> fetchRss(source)
                 }
                 allItems += fetched
@@ -3262,7 +3280,111 @@ class NewsRepository {
         }
         return items
     }
+
+    private fun fetchToutiaoHot(source: NewsSource): List<NewsItem> {
+        val data = JSONObject(httpGet(source.url)).optJSONArray("data") ?: JSONArray()
+        val checkedAt = nowMinute()
+        return (0 until data.length()).mapNotNull { index ->
+            val o = data.optJSONObject(index) ?: return@mapNotNull null
+            val title = o.optString("Title").trim()
+            if (title.isBlank()) return@mapNotNull null
+            val score = o.optLong("HotValue", 0L).takeIf { it > 0 }?.let { "热度 $it" }
+            val label = o.optString("Label").takeIf { it.isNotBlank() && it != "null" }?.let { "标签 $it" }
+            NewsItem(
+                id = stableId(o.optString("Url").ifBlank { "toutiao:$title" }),
+                title = title,
+                summary = listOfNotNull(score, label).joinToString("；").ifBlank { "今日头条热榜第 ${index + 1} 位" },
+                url = o.optString("Url"),
+                source = source.name,
+                scope = source.scope,
+                publishedAt = checkedAt
+            )
+        }
+    }
+
+    private fun fetchBaiduHot(source: NewsSource): List<NewsItem> {
+        val html = httpGet(source.url)
+        val dataText = html.substringAfter("<!--s-data:", "").substringBefore("-->", "")
+        val root = JSONObject(dataText.ifBlank { error("未找到百度热搜数据") })
+        val dataRoot = root.optJSONObject("data") ?: root
+        val cards = dataRoot.getJSONArray("cards")
+        val hotList = (0 until cards.length())
+            .asSequence()
+            .mapNotNull { cards.optJSONObject(it) }
+            .firstOrNull { it.optString("component") == "hotList" }
+            ?.optJSONArray("content")
+        val textList = (0 until cards.length())
+            .asSequence()
+            .mapNotNull { cards.optJSONObject(it) }
+            .firstOrNull { it.optString("component") == "tabTextList" }
+            ?.optJSONArray("content")
+            ?.optJSONObject(0)
+            ?.optJSONArray("content")
+        val content = hotList ?: textList ?: JSONArray()
+        val checkedAt = nowMinute()
+        return (0 until content.length()).mapNotNull { index ->
+            val o = content.optJSONObject(index) ?: return@mapNotNull null
+            val title = o.optString("word").ifBlank { o.optString("query") }.trim()
+            if (title.isBlank()) return@mapNotNull null
+            val score = o.optString("hotScore").takeIf { it.isNotBlank() }?.let { "热搜指数 $it" }
+            val desc = stripHtml(o.optString("desc")).ifBlank { score.orEmpty() }
+            NewsItem(
+                id = stableId(o.optString("rawUrl").ifBlank { "baidu:$title" }),
+                title = title,
+                summary = desc,
+                url = o.optString("url").ifBlank { o.optString("rawUrl") },
+                source = source.name,
+                scope = source.scope,
+                publishedAt = checkedAt
+            )
+        }
+    }
+
+    private fun fetchKr36Flash(source: NewsSource): List<NewsItem> {
+        val html = httpGet(source.url)
+        val stateText = Regex("""window\.initialState=(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
+            .find(html)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.removeSuffix(";")
+            ?: error("未找到 36氪快讯数据")
+        val root = JSONObject(stateText)
+        val latest = root.optJSONObject("newsflashCatalogData")
+            ?.optJSONObject("data")
+            ?.let { catalogData ->
+                catalogData.optJSONObject("latest")
+                    ?.optJSONObject("data")
+                    ?.optJSONArray("itemList")
+                    ?: catalogData.optJSONObject("newsflashList")
+                        ?.optJSONObject("data")
+                        ?.optJSONArray("itemList")
+            }
+            ?: root.optJSONObject("newsflashList")
+                ?.optJSONObject("flow")
+                ?.optJSONArray("itemList")
+            ?: error("未找到 36氪快讯列表")
+        return (0 until latest.length()).mapNotNull { index ->
+            val item = latest.optJSONObject(index) ?: return@mapNotNull null
+            val material = item.optJSONObject("templateMaterial") ?: return@mapNotNull null
+            val title = material.optString("widgetTitle").trim()
+            if (title.isBlank()) return@mapNotNull null
+            val rawRoute = material.optString("sourceUrlRoute")
+            NewsItem(
+                id = stableId(item.optString("itemId").ifBlank { "36kr:$title" }),
+                title = title,
+                summary = stripHtml(material.optString("widgetContent")),
+                url = kr36Url(rawRoute, item.optString("route")),
+                source = source.name,
+                scope = source.scope,
+                publishedAt = formatEpochMillis(material.optLong("publishTime", 0L))
+            )
+        }
+    }
 }
+
+private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "toutiao_hot", "baidu_hot", "kr36_flash")
+private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 2
 
 object AiClient {
     fun critique(settings: AiSettings, script: String): String {
@@ -3354,7 +3476,8 @@ fun httpGet(url: String): String {
         requestMethod = "GET"
         connectTimeout = 15000
         readTimeout = 20000
-        setRequestProperty("User-Agent", "JuheHotNews/0.1 Android")
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0 Safari/537.36 HotNews/0.1")
+        setRequestProperty("Accept", "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
     }
     if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
     return conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
@@ -3556,7 +3679,25 @@ fun stripHtml(value: String): String = value
     .replace(Regex("<[^>]*>"), "")
     .replace("&nbsp;", " ")
     .replace("&amp;", "&")
+    .replace("&quot;", "\"")
+    .replace("&#39;", "'")
     .trim()
+
+fun nowMinute(): String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date())
+
+fun formatEpochMillis(value: Long): String {
+    if (value <= 0L) return nowMinute()
+    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(value))
+}
+
+fun kr36Url(sourceUrlRoute: String, detailRoute: String): String {
+    val encoded = sourceUrlRoute.substringAfter("webview?url=", "")
+    if (encoded.isNotBlank()) {
+        return URLDecoder.decode(encoded, "UTF-8")
+    }
+    val itemId = detailRoute.substringAfter("itemId=", "").takeIf { it.isNotBlank() }
+    return itemId?.let { "https://36kr.com/newsflashes/$it" } ?: "https://36kr.com/newsflashes"
+}
 
 fun stableId(value: String): String {
     val digest = MessageDigest.getInstance("SHA-1").digest(value.toByteArray(Charsets.UTF_8))
