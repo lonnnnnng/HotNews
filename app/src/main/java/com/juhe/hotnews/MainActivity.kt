@@ -192,9 +192,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var tabBar: LinearLayout
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
-    private lateinit var tickerTitle: TextView
-    private lateinit var tickerSubtitle: TextView
-    private lateinit var tickerScore: TextView
     private var tts: TextToSpeech? = null
     private var mediaPlayer: MediaPlayer? = null
     private var activeTab = "news"
@@ -285,136 +282,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 insets
             }
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(12))
-            background = rounded(paper, 0, line, 1)
-        }
-        val topbar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val brand = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        brand.addView(FrameLayout(this).apply {
-            addView(View(context).apply {
-                background = rounded(Color.argb(52, 200, 37, 43), 12)
-            }, FrameLayout.LayoutParams(dp(39), dp(39)).apply {
-                leftMargin = dp(3)
-                topMargin = dp(3)
-            })
-            addView(TextView(context).apply {
-                text = "聚"
-                gravity = Gravity.CENTER
-                setTextColor(ink)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                typeface = serifBold
-                background = rounded(Color.rgb(255, 250, 242), 12, line, 1)
-                includeFontPadding = false
-            }, FrameLayout.LayoutParams(dp(39), dp(39)))
-        }, LinearLayout.LayoutParams(dp(42), dp(42)).apply {
-            setMargins(0, 0, dp(10), 0)
-        })
-        val headerCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        headerCopy.addView(TextView(this).apply {
-            text = "聚合热闻"
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-            typeface = serifBold
-            includeFontPadding = false
-        })
-        headerCopy.addView(TextView(this).apply {
-            text = "Domestic News Desk"
-            setTextColor(muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            typeface = condensedBold
-            letterSpacing = 0.06f
-            setPadding(0, dp(5), 0, 0)
-        })
-        brand.addView(headerCopy)
-        topbar.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        topbar.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            contentDescription = "实时状态，每十分钟刷新"
-            background = rounded(Color.WHITE, 999, line, 1)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            addView(FrameLayout(context).apply {
-                background = rounded(Color.argb(34, 13, 125, 105), 999)
-                addView(View(context).apply {
-                    background = rounded(jade, 999)
-                }, FrameLayout.LayoutParams(dp(8), dp(8), Gravity.CENTER))
-            }, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
-                setMargins(0, 0, dp(7), 0)
-            })
-            addView(TextView(context).apply {
-                text = "LIVE 10m"
-                setTextColor(inkSoft)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                typeface = condensedBold
-                includeFontPadding = false
-            })
-        })
-        header.addView(topbar)
-        val ticker = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
-            setPadding(0, dp(16), 0, 0)
-        }
-        ticker.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            tickerTitle = TextView(context).apply {
-                setTextColor(ink)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
-                typeface = serifBold
-                includeFontPadding = false
-                setLineSpacing(0f, 1.02f)
-            }
-            addView(tickerTitle)
-            tickerSubtitle = TextView(context).apply {
-                setTextColor(red)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-                typeface = serifBold
-                includeFontPadding = false
-                setPadding(0, dp(3), 0, 0)
-            }
-            addView(tickerSubtitle)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        val scoreCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = rounded(Color.rgb(255, 250, 240), 16, ink, 1)
-        }
-        tickerScore = TextView(this).apply {
-            setTextColor(red)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            typeface = condensedBold
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-        }
-        scoreCard.addView(tickerScore)
-        scoreCard.addView(TextView(this).apply {
-            text = "当前可见"
-            setTextColor(muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            typeface = condensedBold
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            setPadding(0, dp(5), 0, 0)
-        })
-        ticker.addView(scoreCard, LinearLayout.LayoutParams(dp(72), -2).apply {
-            setMargins(dp(10), 0, 0, 0)
-        })
-        header.addView(ticker)
         status = TextView(this).apply {
             setTextColor(muted)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setSingleLine(true)
+            visibility = View.GONE
         }
-        root.addView(header)
         val scroll = ScrollView(this)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -434,7 +307,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         setContentView(root)
         root.requestApplyInsets()
-        updateHeaderSummary()
         renderTabs()
     }
 
@@ -2419,14 +2291,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun updateHeaderSummary() {
-        if (!::tickerTitle.isInitialized || !::tickerSubtitle.isInitialized || !::tickerScore.isInitialized) return
-        val visible = visibleItems()
-        val diagnostics = store.sourceDiagnostics()
-        val okCount = diagnostics.count { it.success }.takeIf { diagnostics.isNotEmpty() }
-            ?: store.sources().count { it.enabled }
-        tickerTitle.text = "${items.size} 条稿件"
-        tickerSubtitle.text = "${okCount} 个来源在线"
-        tickerScore.text = visible.size.toString()
+        // Header summary removed from the UI; keep this hook for refresh/filter call sites.
     }
 
     private fun sectionTitle(textValue: String) = TextView(this).apply {
