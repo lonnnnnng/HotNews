@@ -23,10 +23,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.text.InputType
 import android.text.TextUtils
+import android.text.format.Formatter
 import android.util.Base64
 import android.util.Log
 import android.util.TypedValue
@@ -41,9 +43,11 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +69,7 @@ import java.text.SimpleDateFormat
 import java.security.MessageDigest
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SNIHostName
@@ -114,6 +119,15 @@ data class VoiceSettings(
     val apiKey: String = "",
     val model: String = "mimo-v2.5-tts",
     val voice: String = "mimo_default"
+)
+
+data class ReleaseInfo(
+    val tagName: String,
+    val versionName: String,
+    val name: String,
+    val body: String,
+    val apkUrl: String,
+    val apkName: String
 )
 
 private enum class ApiAuthMode {
@@ -1891,6 +1905,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             primaryAction = { editVoiceSettingsDialog(voice) },
             secondaryAction = { testVoiceSettings(store.voiceSettings()) }
         ))
+
+        content.addView(settingCard(
+            title = "应用更新",
+            desc = "从 GitHub Releases 检查流水线发布的 APK，新版本可直接下载并安装。",
+            fields = listOf(
+                "当前版本" to BuildConfig.VERSION_NAME,
+                "发布仓库" to GITHUB_REPO
+            ),
+            primary = "检测更新",
+            secondary = "Release",
+            primaryAction = { checkAppUpdate() },
+            secondaryAction = { openReleasesPage() }
+        ))
     }
 
     private fun editAiSettingsDialog(settings: AiSettings) {
@@ -2291,6 +2318,151 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 toast("远程语音不可用，已回退系统 TTS")
             }
         }
+    }
+
+    private fun checkAppUpdate() {
+        status.text = "正在检查 GitHub Releases..."
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { UpdateClient.fetchLatestRelease() }
+            }.onSuccess { release ->
+                val current = BuildConfig.VERSION_NAME
+                if (compareVersion(release.versionName, current) > 0) {
+                    status.text = "发现新版本 ${release.versionName}"
+                    showUpdateDialog(release)
+                } else {
+                    status.text = "已是最新版本：$current"
+                    showNoUpdateDialog(release)
+                }
+            }.onFailure {
+                val message = it.message ?: "未知错误"
+                status.text = "检查更新失败：$message"
+                toast("检查更新失败：$message")
+            }
+        }
+    }
+
+    private fun showNoUpdateDialog(release: ReleaseInfo) {
+        styledActionDialog(
+            title = "已是最新版本",
+            items = listOf(
+                DialogActionItem("当前 ${BuildConfig.VERSION_NAME}，最新 ${release.versionName}", "check") {},
+                DialogActionItem("查看 Releases", "share") { openReleasesPage() }
+            )
+        ).show()
+    }
+
+    private fun showUpdateDialog(release: ReleaseInfo) {
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(settingField("当前版本", BuildConfig.VERSION_NAME))
+            addView(settingField("新版本", release.versionName), LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(10)
+            })
+            addView(TextView(context).apply {
+                text = release.body.ifBlank { "本次发布未填写更新说明。" }
+                setTextColor(inkSoft)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = serif
+                setLineSpacing(0f, 1.35f)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+            }, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(10)
+            })
+        }
+        styledFormDialog(
+            title = "发现新版本",
+            body = body,
+            primaryLabel = "下载更新",
+            secondaryLabel = "关闭"
+        ) { dialog ->
+            dialog.dismiss()
+            downloadUpdate(release)
+        }.show()
+    }
+
+    private fun downloadUpdate(release: ReleaseInfo) {
+        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            progressTintList = ColorStateList.valueOf(redDeep)
+            progressBackgroundTintList = ColorStateList.valueOf(line)
+        }
+        val progressText = TextView(this).apply {
+            text = "准备下载 ${release.apkName}"
+            setTextColor(inkSoft)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = serif
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(progressText)
+            addView(progress, LinearLayout.LayoutParams(-1, dp(10)).apply {
+                topMargin = dp(14)
+            })
+        }
+        val dialog = styledFormDialog(
+            title = "下载更新",
+            body = body,
+            primaryLabel = "后台下载",
+            secondaryLabel = "关闭"
+        ) { it.dismiss() }
+        dialog.setOnDismissListener { status.text = "更新下载仍在继续" }
+        dialog.show()
+        status.text = "正在下载 ${release.versionName}..."
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    UpdateClient.downloadApk(this@MainActivity, release) { downloaded, total ->
+                        runOnUiThread {
+                            if (total > 0L) {
+                                val percent = ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+                                progress.progress = percent
+                                progressText.text = "已下载 $percent%：${Formatter.formatFileSize(this@MainActivity, downloaded)} / ${Formatter.formatFileSize(this@MainActivity, total)}"
+                            } else {
+                                progress.isIndeterminate = true
+                                progressText.text = "已下载 ${Formatter.formatFileSize(this@MainActivity, downloaded)}"
+                            }
+                        }
+                    }
+                }
+            }.onSuccess { file ->
+                dialog.dismiss()
+                status.text = "下载完成，准备安装 ${release.versionName}"
+                installDownloadedApk(file)
+            }.onFailure {
+                dialog.dismiss()
+                val message = it.message ?: "未知错误"
+                status.text = "下载更新失败：$message"
+                toast("下载更新失败：$message")
+            }
+        }
+    }
+
+    private fun installDownloadedApk(file: File) {
+        if (!packageManager.canRequestPackageInstalls()) {
+            toast("请先允许本应用安装未知来源应用，然后重新点击检测更新")
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:$packageName")
+            })
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(intent) }
+            .onFailure {
+                status.text = "无法打开安装器：${it.message ?: "未知错误"}"
+                toast("无法打开系统安装器")
+            }
+    }
+
+    private fun openReleasesPage() {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/$GITHUB_REPO/releases")))
     }
 
     private fun redactedEndpoint(endpoint: String): String =
@@ -3408,6 +3580,92 @@ class NewsRepository {
 private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "momoyu_hot", "toutiao_hot", "baidu_hot", "kr36_flash", "thepaper_hot", "v2ex_hot", "sspai_home")
 private val REMOVED_DEFAULT_SOURCE_IDS = setOf("cctv-news", "cctv-china", "cctv-world", "china-daily-cn")
 private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 4
+private const val GITHUB_REPO = "lonnnnnng/HotNews"
+
+object UpdateClient {
+    fun fetchLatestRelease(): ReleaseInfo {
+        val conn = (URL("https://api.github.com/repos/$GITHUB_REPO/releases/latest").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("User-Agent", "HotNews/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("Accept", "application/vnd.github+json")
+        }
+        if (conn.responseCode == 404) {
+            return ReleaseInfo(
+                tagName = "v${BuildConfig.VERSION_NAME}",
+                versionName = BuildConfig.VERSION_NAME,
+                name = "当前版本",
+                body = "当前仓库还没有可安装的 Release。",
+                apkUrl = "",
+                apkName = ""
+            )
+        }
+        if (conn.responseCode !in 200..299) {
+            val err = conn.errorStream?.bufferedReader()?.readText().orEmpty()
+            error("GitHub HTTP ${conn.responseCode}${err.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()}")
+        }
+        val root = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+        val tag = root.optString("tag_name").trim()
+        val version = tag.removePrefix("v").ifBlank { root.optString("name").removePrefix("v") }.ifBlank {
+            error("Release 缺少版本号")
+        }
+        val assets = root.optJSONArray("assets") ?: JSONArray()
+        val apkAsset = (0 until assets.length())
+            .asSequence()
+            .mapNotNull { assets.optJSONObject(it) }
+            .firstOrNull { asset ->
+                val name = asset.optString("name")
+                name.endsWith(".apk", ignoreCase = true)
+            }
+        val apkUrl = apkAsset?.optString("browser_download_url").orEmpty()
+        if (compareVersion(version, BuildConfig.VERSION_NAME) > 0 && apkUrl.isBlank()) {
+            error("最新 Release 未附带 APK")
+        }
+        return ReleaseInfo(
+            tagName = tag,
+            versionName = version,
+            name = root.optString("name").ifBlank { tag },
+            body = root.optString("body"),
+            apkUrl = apkUrl,
+            apkName = apkAsset?.optString("name").orEmpty().ifBlank { "HotNews-$tag.apk" }
+        )
+    }
+
+    fun downloadApk(context: Context, release: ReleaseInfo, onProgress: (Long, Long) -> Unit): File {
+        require(release.apkUrl.isNotBlank()) { "Release 未提供 APK 下载地址" }
+        val conn = (URL(release.apkUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 60000
+            setRequestProperty("User-Agent", "HotNews/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("Accept", "application/octet-stream")
+        }
+        if (conn.responseCode !in 200..299) {
+            val err = conn.errorStream?.bufferedReader()?.readText().orEmpty()
+            error("下载失败 HTTP ${conn.responseCode}${err.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()}")
+        }
+        val safeName = release.apkName.ifBlank { "HotNews-${release.tagName}.apk" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val file = File(context.cacheDir, safeName)
+        val total = conn.contentLengthLong
+        var downloaded = 0L
+        conn.inputStream.use { input ->
+            file.outputStream().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    downloaded += read
+                    onProgress(downloaded, total)
+                }
+            }
+        }
+        if (file.length() <= 0L) error("下载文件为空")
+        return file
+    }
+}
 
 object AiClient {
     fun critique(settings: AiSettings, script: String): String {
@@ -3724,12 +3982,30 @@ fun absoluteUrl(base: String, href: String): String {
 
 fun nowMinute(): String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date())
 
+fun compareVersion(left: String, right: String): Int {
+    val a = versionParts(left)
+    val b = versionParts(right)
+    val size = maxOf(a.size, b.size)
+    for (i in 0 until size) {
+        val diff = (a.getOrNull(i) ?: 0) - (b.getOrNull(i) ?: 0)
+        if (diff != 0) return diff
+    }
+    return 0
+}
+
+private fun versionParts(value: String): List<Int> =
+    value.trim()
+        .removePrefix("v")
+        .substringBefore("-")
+        .split(".")
+        .map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
+
 fun formatIsoMinute(value: String): String {
     if (value.isBlank()) return ""
     return runCatching {
         val normalized = value.trim().replace(Regex("\\.\\d{1,9}Z$"), "Z")
         val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = java.util.TimeZone.getTimeZone("UTC")
+            timeZone = TimeZone.getTimeZone("UTC")
         }.parse(normalized) ?: return ""
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(date)
     }.getOrDefault("")

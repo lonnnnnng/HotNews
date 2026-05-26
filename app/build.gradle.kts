@@ -11,8 +11,31 @@ android {
         applicationId = "com.juhe.hotnews"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("VERSION_CODE").orElse("1").get().toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").orElse("0.1.0").get()
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    signingConfigs {
+        create("release") {
+            val storePath = providers.gradleProperty("HOTNEWS_STORE_FILE").orNull
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = providers.gradleProperty("HOTNEWS_STORE_PASSWORD").orNull
+                keyAlias = providers.gradleProperty("HOTNEWS_KEY_ALIAS").orNull
+                keyPassword = providers.gradleProperty("HOTNEWS_KEY_PASSWORD").orNull
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {
@@ -28,6 +51,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 }
