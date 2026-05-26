@@ -1896,7 +1896,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun editSource(existing: NewsSource?) {
         val name = edit("名称", existing?.name.orEmpty())
         val scopeName = edit("范围标签，如 国内/国际/财经", existing?.scope ?: "综合")
-        val type = edit("类型：rss / cctv_jsonp / toutiao_hot / baidu_hot / kr36_flash", existing?.type ?: "rss")
+        val type = edit("类型：${SUPPORTED_SOURCE_TYPES.joinToString(" / ")}", existing?.type ?: "rss")
         val url = edit("URL", existing?.url.orEmpty())
         val enabled = CheckBox(this).apply {
             text = "启用这个抓取范围"
@@ -3167,7 +3167,11 @@ class AppStore(context: Context) {
         NewsSource("china-daily-cn", "中国日报 China", "https://www.chinadaily.com.cn/rss/china_rss.xml", "rss", "国内"),
         NewsSource("baidu-realtime", "百度热搜", "https://top.baidu.com/board?tab=realtime", "baidu_hot", "热榜"),
         NewsSource("toutiao-hot", "今日头条热榜", "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", "toutiao_hot", "热榜"),
-        NewsSource("kr36-flash", "36氪快讯", "https://36kr.com/newsflashes", "kr36_flash", "科技")
+        NewsSource("kr36-flash", "36氪快讯", "https://36kr.com/newsflashes", "kr36_flash", "科技"),
+        NewsSource("ithome-rss", "IT之家", "https://www.ithome.com/rss/", "rss", "科技"),
+        NewsSource("thepaper-hot", "澎湃热点", "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar", "thepaper_hot", "综合"),
+        NewsSource("v2ex-hot", "V2EX 热门", "https://www.v2ex.com/?tab=hot", "v2ex_hot", "社区"),
+        NewsSource("sspai-home", "少数派首页", "https://sspai.com", "sspai_home", "科技")
     )
 }
 
@@ -3191,6 +3195,9 @@ class NewsRepository {
                     "toutiao_hot" -> fetchToutiaoHot(source)
                     "baidu_hot" -> fetchBaiduHot(source)
                     "kr36_flash" -> fetchKr36Flash(source)
+                    "thepaper_hot" -> fetchThepaperHot(source)
+                    "v2ex_hot" -> fetchV2exHot(source)
+                    "sspai_home" -> fetchSspaiHome(source)
                     else -> fetchRss(source)
                 }
                 allItems += fetched
@@ -3381,10 +3388,115 @@ class NewsRepository {
             )
         }
     }
+
+    private fun fetchThepaperHot(source: NewsSource): List<NewsItem> {
+        val root = JSONObject(httpGet(source.url))
+        val data = root.optJSONObject("data") ?: error("未找到澎湃热点数据")
+        val hotNews = data.optJSONArray("hotNews") ?: JSONArray()
+        val checkedAt = nowMinute()
+        return (0 until hotNews.length()).mapNotNull { index ->
+            val o = hotNews.optJSONObject(index) ?: return@mapNotNull null
+            val title = o.optString("name").trim()
+            if (title.isBlank()) return@mapNotNull null
+            val contId = o.optString("contId")
+            val node = o.optJSONObject("nodeInfo")?.optString("name").orEmpty()
+            val interaction = o.optString("interactionNum").takeIf { it.isNotBlank() }?.let { "互动 $it" }
+            val praise = o.optString("praiseTimes").takeIf { it.isNotBlank() && it != "0" }?.let { "点赞 $it" }
+            NewsItem(
+                id = stableId(contId.ifBlank { "thepaper:$title" }),
+                title = title,
+                summary = listOfNotNull(node.takeIf { it.isNotBlank() }, interaction, praise).joinToString("；")
+                    .ifBlank { "澎湃热点第 ${index + 1} 位" },
+                url = o.optString("link").ifBlank { contId.takeIf { it.isNotBlank() }?.let { "https://www.thepaper.cn/newsDetail_forward_$it" }.orEmpty() },
+                source = source.name,
+                scope = source.scope,
+                publishedAt = o.optString("pubTimeNew").ifBlank { o.optString("pubTime").ifBlank { checkedAt } }
+            )
+        }
+    }
+
+    private fun fetchV2exHot(source: NewsSource): List<NewsItem> {
+        val html = httpGet(source.url)
+        val matches = Regex("""<span class="item_title"><a href="([^"]+)" class="topic-link"[^>]*>(.*?)</a></span>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(html)
+            .toList()
+        val checkedAt = nowMinute()
+        return matches.mapNotNull { match ->
+            val title = htmlText(match.groupValues[2])
+            if (title.isBlank()) return@mapNotNull null
+            val start = match.range.first
+            val next = html.indexOf("<div class=\"cell item\"", start + 1).takeIf { it > start } ?: (start + 1400).coerceAtMost(html.length)
+            val block = html.substring(start, next)
+            val node = Regex("""<a class="node"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL)
+                .find(block)?.groupValues?.getOrNull(1)?.let(::htmlText).orEmpty()
+            val time = Regex("""<span title="([^"]+)">""").find(block)?.groupValues?.getOrNull(1).orEmpty()
+            val replies = Regex("""class="count_[^"]*">(\d+)</a>""").find(block)?.groupValues?.getOrNull(1)
+            NewsItem(
+                id = stableId("v2ex:${match.groupValues[1].substringBefore("#")}"),
+                title = title,
+                summary = listOfNotNull(
+                    node.takeIf { it.isNotBlank() }?.let { "节点 $it" },
+                    replies?.let { "回复 $it" }
+                ).joinToString("；").ifBlank { "V2EX 热门讨论" },
+                url = absoluteUrl("https://www.v2ex.com", match.groupValues[1]),
+                source = source.name,
+                scope = source.scope,
+                publishedAt = time.ifBlank { checkedAt }
+            )
+        }
+    }
+
+    private fun fetchSspaiHome(source: NewsSource): List<NewsItem> {
+        val html = httpGet(source.url)
+        val checkedAt = nowMinute()
+        val articleItems = Regex("""<a href="([^"]+)"[^>]*class="article__card__link"[^>]*>.*?<p class="article__card__title[^"]*"[^>]*>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(html)
+            .mapNotNull { match ->
+                val title = htmlText(match.groupValues[2])
+                if (title.isBlank()) null else NewsItem(
+                    id = stableId("sspai:${match.groupValues[1].substringBefore("?")}:$title"),
+                    title = title,
+                    summary = "少数派首页文章",
+                    url = absoluteUrl("https://sspai.com", match.groupValues[1]),
+                    source = source.name,
+                    scope = source.scope,
+                    publishedAt = checkedAt
+                )
+            }
+        val watchingItems = Regex("""<a href="([^"]+)"[^>]*class="friends__watching__item"[^>]*>.*?<div class="friends__watching__item--title"[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(html)
+            .mapNotNull { match ->
+                val title = htmlText(match.groupValues[2])
+                if (title.isBlank()) null else NewsItem(
+                    id = stableId("sspai-watch:${match.groupValues[1].substringBefore("?")}:$title"),
+                    title = title,
+                    summary = "派友在看",
+                    url = absoluteUrl("https://sspai.com", match.groupValues[1]),
+                    source = source.name,
+                    scope = source.scope,
+                    publishedAt = checkedAt
+                )
+            }
+        val morningItems = Regex("""<a href="([^"]+)"[^>]*class="comp__MorningPaperBoardCard[^"]*"[^>]*>.*?<div class="morning__paper__board__card__desc[^"]*"[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(html)
+            .mapNotNull { match ->
+                val title = htmlText(match.groupValues[2])
+                if (title.isBlank()) null else NewsItem(
+                    id = stableId("sspai-morning:${match.groupValues[1].substringBefore("?")}:$title"),
+                    title = title,
+                    summary = "少数派派早报",
+                    url = absoluteUrl("https://sspai.com", match.groupValues[1]),
+                    source = source.name,
+                    scope = source.scope,
+                    publishedAt = checkedAt
+                )
+            }
+        return (morningItems + articleItems + watchingItems).distinctBy { it.id }.take(40).toList()
+    }
 }
 
-private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "toutiao_hot", "baidu_hot", "kr36_flash")
-private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 2
+private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "toutiao_hot", "baidu_hot", "kr36_flash", "thepaper_hot", "v2ex_hot", "sspai_home")
+private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 3
 
 object AiClient {
     fun critique(settings: AiSettings, script: String): String {
@@ -3682,6 +3794,22 @@ fun stripHtml(value: String): String = value
     .replace("&quot;", "\"")
     .replace("&#39;", "'")
     .trim()
+
+fun htmlText(value: String): String = stripHtml(value)
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&apos;", "'")
+    .replace(Regex("\\s+"), " ")
+    .trim()
+
+fun absoluteUrl(base: String, href: String): String {
+    val clean = href.trim()
+    if (clean.startsWith("http://") || clean.startsWith("https://")) return clean
+    if (clean.startsWith("//")) return "https:$clean"
+    val root = URL(base)
+    val prefix = "${root.protocol}://${root.host}"
+    return if (clean.startsWith("/")) "$prefix$clean" else "$prefix/$clean"
+}
 
 fun nowMinute(): String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date())
 

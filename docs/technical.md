@@ -64,7 +64,7 @@
 - `id`：唯一标识。
 - `name`：来源名称。
 - `url`：抓取入口。
-- `type`：来源解析器类型，支持 `rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`。
+- `type`：来源解析器类型，支持 `rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`、`thepaper_hot`、`v2ex_hot`、`sspai_home`。
 - `scope`：范围标签。
 - `enabled`：是否启用。
 
@@ -112,19 +112,22 @@
 
 ## 4. 新闻抓取
 
-当前支持五类解析器：
+当前支持八类解析器：
 
 - `cctv_jsonp`：解析央视网 JSONP，读取 `data.list` 中的 `title`、`brief`、`url`、`focus_date`。
 - `rss`：解析 RSS/Atom 中的 `item` 或 `entry`，读取 `title`、`link`、`description/summary`、`pubDate/published/updated`。
 - `baidu_hot`：解析百度热搜页面注入的 `s-data` JSON，兼容桌面端 `hotList` 与移动端 `tabTextList` 结构，读取 `word/query`、`desc`、`url/rawUrl`、`hotScore`。
 - `toutiao_hot`：解析今日头条热榜 JSON，读取 `data[]` 中的 `Title`、`Url`、`HotValue`、`Label`。
 - `kr36_flash`：解析 36氪快讯页面中的 `window.initialState`，兼容 `newsflashCatalogData` 与移动端 `newsflashList.flow` 结构，读取 `widgetTitle`、`widgetContent`、`sourceUrlRoute`、`publishTime`。
+- `thepaper_hot`：解析澎湃新闻公开右侧栏 JSON，读取 `data.hotNews[]` 中的 `name`、`contId`、`nodeInfo.name`、`interactionNum`、`praiseTimes`、`pubTimeNew`。
+- `v2ex_hot`：解析 V2EX 热门页 HTML，读取热门讨论标题、节点、回复数和话题链接。
+- `sspai_home`：解析少数派首页 HTML，读取派早报、首页文章和“派友在看”标题。
 
 默认来源模板版本：
 
-- `source_template_version = 2`。
+- `source_template_version = 3`。
 - 新安装会直接写入最新默认来源。
-- 旧安装首次启动时会补齐新增默认热榜源；补齐后写入模板版本，避免用户后续手动删除某个默认源后又被每次启动自动加回。
+- 旧安装首次启动时会补齐新增默认热榜/公开热门站点源；补齐后写入模板版本，避免用户后续手动删除某个默认源后又被每次启动自动加回。
 
 刷新机制：
 

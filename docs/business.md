@@ -29,19 +29,23 @@
 - 百度热搜：`https://top.baidu.com/board?tab=realtime`
 - 今日头条热榜：`https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc`
 - 36氪快讯：`https://36kr.com/newsflashes`
+- IT之家 RSS：`https://www.ithome.com/rss/`
+- 澎湃热点：`https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar`
+- V2EX 热门：`https://www.v2ex.com/?tab=hot`
+- 少数派首页：`https://sspai.com`
 
 自定义范围字段：
 
 - 名称：用户可读的媒体或栏目名称。
 - 范围标签：综合、国内、国际、财经、科技等。
-- 类型：`rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`。
+- 类型：`rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`、`thepaper_hot`、`v2ex_hot`、`sspai_home`。
 - URL：抓取入口。
 - 启用状态：是否参与刷新。
 
 保存规则：
 
 - URL 必须以 `http://` 或 `https://` 开头。
-- 类型只能是应用支持的解析器类型：`rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`。
+- 类型只能是应用支持的解析器类型：`rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`、`thepaper_hot`、`v2ex_hot`、`sspai_home`。
 - 同一个 URL 不允许重复保存。
 - URL 为空时弹窗保持打开并提示用户补全。
 - 用户可对单个来源执行“测试”，检查当前配置是否能抓到新闻。
