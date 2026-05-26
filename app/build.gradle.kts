@@ -11,8 +11,8 @@ android {
         applicationId = "com.juhe.hotnews"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("VERSION_CODE").orElse("6").get().toInt()
-        versionName = providers.gradleProperty("VERSION_NAME").orElse("0.1.5").get()
+        versionCode = providers.gradleProperty("VERSION_CODE").orElse("10000").get().toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").orElse("1.0.0").get()
     }
 
     buildFeatures {
