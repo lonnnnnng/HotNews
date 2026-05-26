@@ -44,6 +44,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -192,6 +193,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var tabBar: LinearLayout
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private var tts: TextToSpeech? = null
     private var mediaPlayer: MediaPlayer? = null
     private var activeTab = "news"
@@ -294,7 +296,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setPadding(dp(14), dp(14), dp(14), dp(20))
         }
         scroll.addView(content)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        swipeRefresh = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(redDeep, jade, gold)
+            setProgressBackgroundColorSchemeColor(Color.rgb(255, 253, 248))
+            setOnRefreshListener {
+                if (activeTab == "news") {
+                    refreshNews()
+                } else {
+                    isRefreshing = false
+                }
+            }
+            addView(scroll)
+        }
+        root.addView(swipeRefresh, LinearLayout.LayoutParams(-1, 0, 1f))
         tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -327,10 +341,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             "news" to "新闻",
             "hot" to "热点",
             "briefing" to "简报",
-            "sources" to "范围",
             "settings" to "设置"
         ).forEach { (id, label) ->
-                val active = activeTab == id
+                val active = activeTab == id || (activeTab == "sources" && id == "settings")
                 tabBar.addView(LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
@@ -361,7 +374,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                             "news" -> showNews()
                             "hot" -> showHotTopics()
                             "briefing" -> showBriefing()
-                            "sources" -> showSources()
                             else -> showSettings()
                         }
                     }
@@ -373,10 +385,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showNews() {
         activeTab = "news"
+        swipeRefresh.isEnabled = true
+        if (feedMode != "all") {
+            feedMode = "all"
+            store.saveFeedMode(feedMode)
+        }
         content.removeAllViews()
         renderTabs()
         renderFilter()
-        renderFeedMode()
         renderScopeFilter()
         renderVisibleBatchActions()
         selected?.let { renderDetail(it) }
@@ -385,6 +401,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showHotTopics() {
         activeTab = "hot"
+        swipeRefresh.isEnabled = false
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
@@ -405,6 +422,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showBriefing() {
         activeTab = "briefing"
+        swipeRefresh.isEnabled = false
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
@@ -567,12 +585,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setMargins(0, 0, dp(12), 0)
             })
             addView(TextView(context).apply {
-                text = reportPreview(report)
+                text = report
                 contentDescription = "新闻日报内容"
                 setTextColor(inkSoft)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                 typeface = serif
-                setLineSpacing(0f, 1.28f)
+                setLineSpacing(0f, 1.34f)
             }, LinearLayout.LayoutParams(0, -2, 1f))
         })
         val actions = LinearLayout(context).apply {
@@ -610,25 +628,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun reportScopeLabel(): String = when {
         scopeFilter != "all" -> "$scopeFilter 范围"
-        feedMode != "all" -> feedModeLabel()
         else -> "全部范围"
-    }
-
-    private fun reportPreview(report: String): String {
-        if (report.startsWith("暂无可生成日报")) return report
-        val lines = report.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
-        val overview = lines.firstOrNull { it.startsWith("当前新闻池") || it.startsWith("暂无明显") }
-            ?.removePrefix("当前新闻池")
-            ?.trim()
-            ?.take(28)
-            ?: "已形成可读样本。"
-        val topics = hotTopics().take(2).joinToString("、") { it.title.take(12) }
-        val focus = visibleItems().ifEmpty { items }.take(1).firstOrNull()?.title?.take(20).orEmpty()
-        return buildString {
-            append("一、今日概览：").append(overview.ifBlank { "已形成可读样本。" })
-            append("\n二、热点话题：").append(topics.ifBlank { "暂未形成明显聚合热点。" })
-            append("\n三、稍后关注：").append(focus.ifBlank { "等待下一轮刷新和多来源复核。" })
-        }
     }
 
     private fun showReportActions(report: String) {
@@ -843,27 +843,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         content.addView(row)
     }
 
-    private fun renderFeedMode() {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(1), dp(2), dp(1), dp(12))
-        }
-        listOf("all" to "全部", "favorite" to "收藏", "unread" to "未读").forEach { (mode, label) ->
-            row.addView(chipView(label, feedMode == mode) {
-                    feedMode = mode
-                    store.saveFeedMode(mode)
-                    selected = visibleItems().firstOrNull()
-                    showReadableTab()
-            }, LinearLayout.LayoutParams(-2, dp(34)).apply {
-                setMargins(0, 0, dp(7), 0)
-            })
-        }
-        content.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(row)
-        }, LinearLayout.LayoutParams(-1, -2))
-    }
-
     private fun renderScopeFilter() {
         val scopes = scopeOptions()
         if (scopes.size <= 1) return
@@ -904,24 +883,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun renderVisibleBatchActions() {
-        val visible = visibleItems()
-        val unreadCount = visible.count { !it.read }
-        val favoriteCount = visible.count { it.favorite }
         updateHeaderSummary()
-        val stats = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(2), 0, dp(12))
-        }
-        stats.addView(statCard(visible.size.toString(), "当前可见"), LinearLayout.LayoutParams(0, dp(62), 1f).apply {
-            setMargins(0, 0, dp(4), 0)
-        })
-        stats.addView(statCard(unreadCount.toString(), "未读"), LinearLayout.LayoutParams(0, dp(62), 1f).apply {
-            setMargins(dp(4), 0, dp(4), 0)
-        })
-        stats.addView(statCard(favoriteCount.toString(), "收藏"), LinearLayout.LayoutParams(0, dp(62), 1f).apply {
-            setMargins(dp(4), 0, 0, 0)
-        })
-        content.addView(stats)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 0, 0, dp(14))
@@ -951,14 +913,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (visible.isEmpty()) {
             val reason = listOfNotNull(
                 if (scopeFilter != "all") "范围“$scopeFilter”" else null,
-                if (keywordFilter.isNotBlank()) "关键词“$keywordFilter”" else null,
-                when (feedMode) {
-                    "favorite" -> "收藏视图"
-                    "unread" -> "未读视图"
-                    else -> null
-                }
+                if (keywordFilter.isNotBlank()) "关键词“$keywordFilter”" else null
             ).joinToString("、").ifBlank { "当前条件" }
-            content.addView(note("没有匹配$reason 的新闻，调整范围、视图或清空筛选后可查看其他稿件。"))
+            content.addView(note("没有匹配$reason 的新闻，调整范围或清空筛选后可查看其他稿件。"))
             return
         }
         visible.forEachIndexed { index, item ->
@@ -1071,6 +1028,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             runCatching {
                 withContext(Dispatchers.IO) { repo.fetchWithDiagnostics(store.sources().filter { it.enabled }) }
             }.onSuccess { result ->
+                swipeRefresh.isRefreshing = false
                 store.saveSourceDiagnostics(result.diagnostics)
                 val fetched = result.items
                 if (fetched.isEmpty()) {
@@ -1104,6 +1062,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     "news" -> showNews()
                 }
             }.onFailure {
+                swipeRefresh.isRefreshing = false
                 if (!silent) {
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
@@ -1169,7 +1128,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             append(headlines)
             appendLine()
             appendLine()
-            append("提示：简报基于当前列表、筛选词和全部/收藏/未读视图自动生成。需要深度观点时，可进入新闻详情调用大模型锐评。")
+            append("提示：简报基于当前列表、筛选词和抓取范围自动生成。需要深度观点时，可进入新闻详情调用大模型锐评。")
         }
     }
 
@@ -1209,6 +1168,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             appendLine("三、重点新闻")
             focusItems.forEachIndexed { index, item ->
                 appendLine("${index + 1}. ${item.title}（${item.source} / ${item.scope.ifBlank { "综合" }}）")
+                item.summary.takeIf { it.isNotBlank() }?.let {
+                    appendLine("   摘要：${it.take(90)}${if (it.length > 90) "..." else ""}")
+                }
             }
             appendLine()
             appendLine("四、稍后关注")
@@ -1217,10 +1179,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             } else {
                 watchItems.forEachIndexed { index, item ->
                     appendLine("${index + 1}. ${item.title}（${item.source}）")
+                    item.summary.takeIf { it.isNotBlank() }?.let {
+                        appendLine("   观察点：${it.take(72)}${if (it.length > 72) "..." else ""}")
+                    }
                 }
             }
             appendLine()
-            append("说明：本日报由端侧规则基于当前筛选、收藏/未读视图和热点聚合结果生成，不替代媒体原文与人工研判。")
+            append("说明：本日报由端侧规则基于当前筛选、抓取范围和热点聚合结果生成，不替代媒体原文与人工研判。")
         }.trim()
     }
 
@@ -1337,18 +1302,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (visible.isEmpty()) return ""
         return buildString {
             appendLine("聚合热闻可见标题清单")
-            appendLine("范围：${if (scopeFilter == "all") "全部范围" else scopeFilter}；视图：${feedModeLabel()}；关键词：${keywordFilter.ifBlank { "无" }}。")
+            appendLine("范围：${if (scopeFilter == "all") "全部范围" else scopeFilter}；关键词：${keywordFilter.ifBlank { "无" }}。")
             visible.take(80).forEachIndexed { index, item ->
                 appendLine("${index + 1}. ${item.title}（${item.source} / ${item.scope.ifBlank { "综合" }} / ${item.publishedAt.ifBlank { "未知时间" }}）")
             }
             if (visible.size > 80) appendLine("另有 ${visible.size - 80} 条未列出。")
         }.trim()
-    }
-
-    private fun feedModeLabel(): String = when (feedMode) {
-        "favorite" -> "收藏"
-        "unread" -> "未读"
-        else -> "全部"
     }
 
     private fun stopSpeaking() {
@@ -1528,14 +1487,46 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showSources() {
         activeTab = "sources"
+        swipeRefresh.isEnabled = false
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
         val diagnostics = store.sourceDiagnostics().associateBy { it.sourceId }
+        content.addView(sourceSettingsHeader(diagnostics.values.toList()))
+        content.addView(sourceTools())
         store.sources().forEach { source ->
             content.addView(sourceCard(source, diagnostics[source.id]))
         }
-        content.addView(sourceTools())
+    }
+
+    private fun sourceSettingsHeader(diagnostics: List<SourceDiagnostic>): View = LinearLayout(this).apply {
+        val sources = store.sources()
+        val enabledCount = sources.count { it.enabled }
+        val onlineCount = diagnostics.count { it.success }.takeIf { diagnostics.isNotEmpty() } ?: enabledCount
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
+        elevation = dp(2).toFloat()
+        addView(TextView(context).apply {
+            text = "抓取范围设置"
+            setTextColor(ink)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            typeface = serifBold
+            includeFontPadding = false
+        })
+        addView(TextView(context).apply {
+            text = "管理默认媒体源和自定义热榜源，启停、测试、导入导出都在这里完成。"
+            setTextColor(inkSoft)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = serif
+            setLineSpacing(0f, 1.18f)
+            setPadding(0, dp(9), 0, dp(12))
+        })
+        addView(metaBadges(listOf("$enabledCount / ${sources.size} 启用", "$onlineCount 个在线", "设置入口")))
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(12))
+        }
     }
 
     private fun sourceTools(): View = LinearLayout(this).apply {
@@ -1832,9 +1823,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showSettings() {
         activeTab = "settings"
+        swipeRefresh.isEnabled = false
         content.removeAllViews()
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
+        val sources = store.sources()
+        val diagnostics = store.sourceDiagnostics()
+        val sourceOkCount = diagnostics.count { it.success }.takeIf { diagnostics.isNotEmpty() }
+            ?: sources.count { it.enabled }
+        content.addView(settingCard(
+            title = "抓取范围设置",
+            desc = "管理默认媒体源和自定义热榜源，支持新增、编辑、启停、测试、导入和导出。",
+            fields = listOf(
+                "启用来源" to "${sources.count { it.enabled }} / ${sources.size}",
+                "最近诊断" to "$sourceOkCount 个来源在线"
+            ),
+            primary = "进入",
+            secondary = "导出配置",
+            primaryAction = { showSources() },
+            secondaryAction = { exportSources() }
+        ))
+
         val ai = store.aiSettings()
         content.addView(settingCard(
             title = "新闻锐评大模型",
@@ -2441,28 +2450,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             includeFontPadding = false
         })
         setOnClickListener { action() }
-    }
-
-    private fun statCard(value: String, label: String): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(10), dp(7), dp(10), dp(7))
-        background = rounded(Color.argb(194, 255, 255, 255), 16, line, 1)
-        addView(TextView(context).apply {
-            text = value
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
-            typeface = condensedBold
-            includeFontPadding = false
-        })
-        addView(TextView(context).apply {
-            text = label
-            setTextColor(muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            typeface = condensed
-            setPadding(0, dp(4), 0, 0)
-            includeFontPadding = false
-        })
     }
 
     private fun card(build: LinearLayout.() -> Unit): View = LinearLayout(this).apply {
