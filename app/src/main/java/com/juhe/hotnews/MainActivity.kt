@@ -194,6 +194,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var scrollView: ScrollView
     private var tts: TextToSpeech? = null
     private var mediaPlayer: MediaPlayer? = null
     private var activeTab = "news"
@@ -230,7 +231,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         feedMode = store.feedMode()
         scopeFilter = store.scopeFilter()
         restoreReadableStartupFilters()
-        selected = visibleItems().firstOrNull()
         buildShell()
         if (items.isNotEmpty()) {
             status.text = "已加载本地缓存 ${items.size} 条，正在刷新..."
@@ -290,15 +290,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setSingleLine(true)
             visibility = View.GONE
         }
-        val scroll = ScrollView(this)
+        scrollView = ScrollView(this)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(20))
         }
-        scroll.addView(content)
+        scrollView.addView(content)
         swipeRefresh = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(redDeep, jade, gold)
             setProgressBackgroundColorSchemeColor(Color.rgb(255, 253, 248))
+            setOnChildScrollUpCallback { _, _ -> scrollView.canScrollVertically(-1) }
             setOnRefreshListener {
                 if (activeTab == "news") {
                     refreshNews()
@@ -306,7 +307,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     isRefreshing = false
                 }
             }
-            addView(scroll)
+            addView(scrollView)
         }
         root.addView(swipeRefresh, LinearLayout.LayoutParams(-1, 0, 1f))
         tabBar = LinearLayout(this).apply {
@@ -339,7 +340,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar.orientation = LinearLayout.HORIZONTAL
         listOf(
             "news" to "新闻",
-            "hot" to "热点",
             "briefing" to "简报",
             "settings" to "设置"
         ).forEach { (id, label) ->
@@ -372,7 +372,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         renderTabs()
                         when (id) {
                             "news" -> showNews()
-                            "hot" -> showHotTopics()
                             "briefing" -> showBriefing()
                             else -> showSettings()
                         }
@@ -395,7 +394,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         renderFilter()
         renderScopeFilter()
         renderVisibleBatchActions()
-        selected?.let { renderDetail(it) }
         renderNewsList()
     }
 
@@ -825,7 +823,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                     keywordFilter = text.toString().trim()
                     store.saveKeywordFilter(keywordFilter)
-                    selected = visibleItems().firstOrNull()
+                    selected = null
                     showReadableTab()
                     true
                 } else {
@@ -856,7 +854,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             row.addView(chipView(label, active) {
                     scopeFilter = scopeName
                     store.saveScopeFilter(scopeFilter)
-                    selected = visibleItems().firstOrNull()
+                    selected = null
                     showReadableTab()
             }, LinearLayout.LayoutParams(-2, dp(34)).apply {
                 setMargins(0, 0, dp(7), 0)
@@ -877,7 +875,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun showReadableTab() {
         when (activeTab) {
             "briefing" -> showBriefing()
-            "hot" -> showHotTopics()
             else -> showNews()
         }
     }
@@ -919,10 +916,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
         visible.forEachIndexed { index, item ->
+            val isSelected = selected?.id == item.id
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(14), dp(14), dp(14), dp(14))
-                background = rounded(Color.argb(230, 255, 253, 248), 22, line, 1)
+                background = rounded(
+                    if (isSelected) Color.rgb(255, 249, 238) else Color.argb(230, 255, 253, 248),
+                    22,
+                    if (isSelected) Color.argb(88, 200, 37, 43) else line,
+                    1
+                )
                 elevation = dp(2).toFloat()
             }
             row.addView(TextView(this).apply {
@@ -953,9 +956,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             row.setOnClickListener {
+                val keepY = scrollView.scrollY
                 selected = updateItemState(item.id, read = true)
                 lastCritique = ""
                 showNews()
+                scrollView.post { scrollView.scrollTo(0, keepY) }
             }
             row.setOnLongClickListener {
                 selected = updateItemState(item.id, read = true)
@@ -965,10 +970,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             content.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
                 setMargins(0, 0, 0, dp(10))
             })
+            if (isSelected) {
+                renderDetail(item, compact = true)
+            }
         }
     }
 
-    private fun renderDetail(item: NewsItem) {
+    private fun renderDetail(item: NewsItem, compact: Boolean = false) {
         content.addView(leadCard {
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -977,7 +985,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     setMargins(0, 0, dp(8), 0)
                 })
                 addView(TextView(context).apply {
-                    text = "当前新闻稿"
+                    text = if (compact) "展开新闻稿" else "当前新闻稿"
                     setTextColor(red)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
                     typeface = condensedBold
@@ -991,12 +999,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 typeface = serifBold
                 setLineSpacing(0f, 1.15f)
                 setPadding(0, dp(12), 0, dp(8))
-                maxLines = 2
-                ellipsize = TextUtils.TruncateAt.END
+                if (compact) {
+                    maxLines = Int.MAX_VALUE
+                    ellipsize = null
+                } else {
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                }
             })
             addView(TextView(context).apply {
                 val preview = item.summary.ifBlank { item.script }
-                text = if (preview.length > 92) "${preview.take(92)}..." else preview
+                text = if (compact) preview else if (preview.length > 92) "${preview.take(92)}..." else preview
                 setTextColor(inkSoft)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
                 typeface = serif
@@ -1035,14 +1048,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
                         items = cached
-                        selected = visibleItems().firstOrNull()
+                        keepSelectedIfVisible()
                         status.text = "本次未抓到新闻，已显示本地缓存 ${items.size} 条；可在范围页查看来源诊断"
                     } else {
+                        selected = null
                         status.text = "本次未抓到新闻；可在范围页查看来源诊断"
                     }
                     when (activeTab) {
                         "briefing" -> showBriefing()
-                        "hot" -> showHotTopics()
                         "sources" -> showSources()
                         "news" -> showNews()
                     }
@@ -1050,14 +1063,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
                 items = mergeLocalState(fetched.distinctBy { it.id }.sortedByDescending { it.publishedAt }).take(NEWS_CACHE_LIMIT)
                 store.saveNewsCache(items)
-                selected = visibleItems().firstOrNull()
+                keepSelectedIfVisible()
                 val okCount = result.diagnostics.count { it.success }
                 val failCount = result.diagnostics.count { !it.success }
                 status.text = "已汇总 ${items.size} 条，来源成功 $okCount 个、失败 $failCount 个；前台每 10 分钟自动更新"
                 updateHeaderSummary()
                 when (activeTab) {
                     "briefing" -> showBriefing()
-                    "hot" -> showHotTopics()
                     "sources" -> showSources()
                     "news" -> showNews()
                 }
@@ -1067,15 +1079,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
                         items = cached
-                        selected = visibleItems().firstOrNull()
+                        keepSelectedIfVisible()
                         status.text = "抓取失败，已显示本地缓存 ${items.size} 条：${it.message ?: "未知错误"}"
                     } else {
+                        selected = null
                         status.text = "抓取失败：${it.message ?: "未知错误"}"
                     }
                     updateHeaderSummary()
                     when (activeTab) {
                         "briefing" -> showBriefing()
-                        "hot" -> showHotTopics()
                         "sources" -> showSources()
                         "news" -> showNews()
                     }
@@ -1100,6 +1112,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 it.summary.contains(key, ignoreCase = true) ||
                 it.source.contains(key, ignoreCase = true) ||
             it.scope.contains(key, ignoreCase = true)
+        }
+    }
+
+    private fun keepSelectedIfVisible() {
+        val selectedId = selected?.id
+        selected = if (selectedId == null) {
+            null
+        } else {
+            visibleItems().firstOrNull { it.id == selectedId }
         }
     }
 
@@ -1292,7 +1313,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (it.id in visibleIds) it.copy(read = read) else it
         }
         store.saveNewsCache(items)
-        selected = visibleItems().firstOrNull()
+        keepSelectedIfVisible()
         status.text = "已将当前可见 ${visibleIds.size} 条标记为${if (read) "已读" else "未读"}"
         showNews()
     }
@@ -1429,7 +1450,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun showActiveReadableTab() {
         when (activeTab) {
             "briefing" -> showBriefing()
-            "hot" -> showHotTopics()
         }
     }
 
