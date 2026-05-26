@@ -52,7 +52,8 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace -PVERSION_NAME=${{ steps.app_version.outputs.version_name }} -PVERSION_CODE=${{ steps.app_version.outputs.version_code }}
 
-      - name: Validate release signing secrets
+      - name: Check release signing secrets
+        id: signing
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           HOTNEWS_KEYSTORE_BASE64: ${{ secrets.HOTNEWS_KEYSTORE_BASE64 }}
@@ -60,20 +61,23 @@ jobs:
           HOTNEWS_KEY_ALIAS: ${{ secrets.HOTNEWS_KEY_ALIAS }}
           HOTNEWS_KEY_PASSWORD: ${{ secrets.HOTNEWS_KEY_PASSWORD }}
         run: |
-          test -n "$HOTNEWS_KEYSTORE_BASE64"
-          test -n "$HOTNEWS_STORE_PASSWORD"
-          test -n "$HOTNEWS_KEY_ALIAS"
-          test -n "$HOTNEWS_KEY_PASSWORD"
+          if [[ -n "$HOTNEWS_KEYSTORE_BASE64" && -n "$HOTNEWS_STORE_PASSWORD" && -n "$HOTNEWS_KEY_ALIAS" && -n "$HOTNEWS_KEY_PASSWORD" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are configured. A signed release APK will be built."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are incomplete. Falling back to the debug APK for this GitHub Release."
+          fi
 
       - name: Decode release keystore
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.available == 'true'
         env:
           HOTNEWS_KEYSTORE_BASE64: ${{ secrets.HOTNEWS_KEYSTORE_BASE64 }}
         run: |
           echo "$HOTNEWS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/hotnews-release.jks"
 
       - name: Build signed release APK
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.available == 'true'
         env:
           HOTNEWS_STORE_PASSWORD: ${{ secrets.HOTNEWS_STORE_PASSWORD }}
           HOTNEWS_KEY_ALIAS: ${{ secrets.HOTNEWS_KEY_ALIAS }}
@@ -87,11 +91,17 @@ jobs:
           -PHOTNEWS_KEY_ALIAS=$HOTNEWS_KEY_ALIAS
           -PHOTNEWS_KEY_PASSWORD=$HOTNEWS_KEY_PASSWORD
 
-      - name: Prepare release asset
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Prepare signed release asset
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.available == 'true'
         run: |
           mkdir -p release
           cp app/build/outputs/apk/release/app-release.apk "release/HotNews-${GITHUB_REF_NAME}.apk"
+
+      - name: Prepare debug release asset
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.available != 'true'
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk "release/HotNews-${GITHUB_REF_NAME}-debug.apk"
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')

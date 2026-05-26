@@ -47,12 +47,12 @@ app/build/outputs/apk/debug/app-debug.apk
 仓库内置流水线：[Android APK](.github/workflows/android-apk.yml)。
 
 - 推送 `main` 或发起 PR 时构建 debug APK，并上传为 workflow artifact。
-- 推送 `v*` tag 时构建 debug APK，并额外构建签名 release APK。
+- 推送 `v*` tag 时构建 debug APK；如果仓库 Secrets 配置了发布签名，则额外构建签名 release APK。
 - tag 版本会写入 `VERSION_NAME`，例如 `v0.2.0` 会生成 `versionName=0.2.0`。
 - `VERSION_CODE` 默认使用 UTC 小时时间戳，保证流水线构建产物可升级。
-- tag 构建完成后会创建或更新 GitHub Release，并上传 `HotNews-vX.Y.Z.apk`。
+- tag 构建完成后会创建或更新 GitHub Release。存在发布签名时上传 `HotNews-vX.Y.Z.apk`；未配置签名时上传 `HotNews-vX.Y.Z-debug.apk`，用于当前 public 仓库的测试发布和应用内更新验证。
 
-发布正式可升级 APK 前，需要在 GitHub 仓库 Secrets 配置同一套长期稳定签名证书：
+发布正式可升级 APK 前，建议在 GitHub 仓库 Secrets 配置同一套长期稳定签名证书：
 
 ```text
 HOTNEWS_KEYSTORE_BASE64
@@ -61,7 +61,7 @@ HOTNEWS_KEY_ALIAS
 HOTNEWS_KEY_PASSWORD
 ```
 
-注意：Android 覆盖安装要求新旧 APK 使用同一个签名证书。不要更换正式签名证书，否则已安装用户无法直接升级。
+注意：Android 覆盖安装要求新旧 APK 使用同一个签名证书。debug APK 适合测试发布；面向真实用户发布时应使用稳定 release 签名，不要更换正式签名证书，否则已安装用户无法直接升级。
 
 ## 应用内更新
 
