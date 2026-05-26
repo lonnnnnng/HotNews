@@ -2786,8 +2786,9 @@ class AppStore(context: Context) {
             val current = sources()
             val templateVersion = prefs.getInt("source_template_version", 1)
             if (templateVersion < DEFAULT_SOURCE_TEMPLATE_VERSION) {
-                val existingIds = current.map { it.id }.toSet()
-                saveSources(current + defaultSources().filterNot { it.id in existingIds })
+                val migrated = current.filterNot { it.id in REMOVED_DEFAULT_SOURCE_IDS }
+                val existingIds = migrated.map { it.id }.toSet()
+                saveSources(migrated + defaultSources().filterNot { it.id in existingIds })
                 prefs.edit().putInt("source_template_version", DEFAULT_SOURCE_TEMPLATE_VERSION).apply()
             } else {
                 saveSources(current)
@@ -3013,10 +3014,7 @@ class AppStore(context: Context) {
     }
 
     private fun defaultSources() = listOf(
-        NewsSource("cctv-news", "央视网新闻", "https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/news_1.jsonp", "cctv_jsonp", "综合"),
-        NewsSource("cctv-china", "央视网国内", "https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/china_1.jsonp", "cctv_jsonp", "国内"),
-        NewsSource("cctv-world", "央视网国际", "https://news.cctv.com/2019/07/gaiban/cmsdatainterface/page/world_1.jsonp", "cctv_jsonp", "国际"),
-        NewsSource("china-daily-cn", "中国日报 China", "https://www.chinadaily.com.cn/rss/china_rss.xml", "rss", "国内"),
+        NewsSource("momoyu-hot", "摸摸鱼聚合热榜", "https://www.momoyu.cc/api/hot/list?type=0", "momoyu_hot", "热榜"),
         NewsSource("baidu-realtime", "百度热搜", "https://top.baidu.com/board?tab=realtime", "baidu_hot", "热榜"),
         NewsSource("toutiao-hot", "今日头条热榜", "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", "toutiao_hot", "热榜"),
         NewsSource("kr36-flash", "36氪快讯", "https://36kr.com/newsflashes", "kr36_flash", "科技"),
@@ -3044,6 +3042,7 @@ class NewsRepository {
             runCatching {
                 val fetched = when (source.type.lowercase(Locale.ROOT)) {
                     "cctv_jsonp" -> fetchCctvJsonp(source)
+                    "momoyu_hot" -> fetchMomoyuHot(source)
                     "toutiao_hot" -> fetchToutiaoHot(source)
                     "baidu_hot" -> fetchBaiduHot(source)
                     "kr36_flash" -> fetchKr36Flash(source)
@@ -3138,6 +3137,45 @@ class NewsRepository {
             event = parser.next()
         }
         return items
+    }
+
+    private fun fetchMomoyuHot(source: NewsSource): List<NewsItem> {
+        val root = JSONObject(httpGet(source.url))
+        if (root.optInt("status") != 100000) {
+            error(root.optString("message").ifBlank { "摸摸鱼热榜返回异常" })
+        }
+        val sections = root.optJSONArray("data") ?: JSONArray()
+        val checkedAt = nowMinute()
+        val items = mutableListOf<NewsItem>()
+        for (sectionIndex in 0 until sections.length()) {
+            val section = sections.optJSONObject(sectionIndex) ?: continue
+            val sectionName = section.optString("name").trim().ifBlank { source.name }
+            val sourceKey = section.optString("source_key").trim().ifBlank { section.optString("id") }
+            val createdAt = formatIsoMinute(section.optString("create_time")).ifBlank { checkedAt }
+            val data = section.optJSONArray("data") ?: continue
+            for (index in 0 until data.length()) {
+                val o = data.optJSONObject(index) ?: continue
+                val title = o.optString("title").trim()
+                if (title.isBlank()) continue
+                val link = o.optString("link").trim()
+                val extra = o.optString("extra").trim()
+                val itemId = o.optString("id").ifBlank { link.ifBlank { title } }
+                items += NewsItem(
+                    id = stableId("momoyu:$sourceKey:$itemId"),
+                    title = title,
+                    summary = listOfNotNull(
+                        extra.takeIf { it.isNotBlank() }?.let { "热度 $it" },
+                        "来自 $sectionName",
+                        "第 ${index + 1} 位"
+                    ).joinToString("；"),
+                    url = link,
+                    source = sectionName,
+                    scope = source.scope,
+                    publishedAt = createdAt
+                )
+            }
+        }
+        return items.distinctBy { it.id }.take(300)
     }
 
     private fun fetchToutiaoHot(source: NewsSource): List<NewsItem> {
@@ -3347,8 +3385,9 @@ class NewsRepository {
     }
 }
 
-private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "toutiao_hot", "baidu_hot", "kr36_flash", "thepaper_hot", "v2ex_hot", "sspai_home")
-private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 3
+private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "momoyu_hot", "toutiao_hot", "baidu_hot", "kr36_flash", "thepaper_hot", "v2ex_hot", "sspai_home")
+private val REMOVED_DEFAULT_SOURCE_IDS = setOf("cctv-news", "cctv-china", "cctv-world", "china-daily-cn")
+private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 4
 
 object AiClient {
     fun critique(settings: AiSettings, script: String): String {
@@ -3664,6 +3703,17 @@ fun absoluteUrl(base: String, href: String): String {
 }
 
 fun nowMinute(): String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date())
+
+fun formatIsoMinute(value: String): String {
+    if (value.isBlank()) return ""
+    return runCatching {
+        val normalized = value.trim().replace(Regex("\\.\\d{1,9}Z$"), "Z")
+        val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.parse(normalized) ?: return ""
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(date)
+    }.getOrDefault("")
+}
 
 fun formatEpochMillis(value: Long): String {
     if (value <= 0L) return nowMinute()
