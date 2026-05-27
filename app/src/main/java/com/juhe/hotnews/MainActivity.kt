@@ -21,6 +21,7 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -38,6 +39,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -227,6 +230,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var playQueue: List<NewsItem> = emptyList()
     private var playQueueIndex: Int = 0
     private var isQueueSpeaking: Boolean = false
+    private var backCallback: OnBackInvokedCallback? = null
     private val refreshHandler = Handler(Looper.getMainLooper())
     private val refreshTick = object : Runnable {
         override fun run() {
@@ -257,10 +261,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         showNews()
         refreshNews()
+        registerBackNavigation()
         refreshHandler.postDelayed(refreshTick, 10 * 60 * 1000L)
     }
 
     override fun onDestroy() {
+        unregisterBackNavigation()
         refreshHandler.removeCallbacks(refreshTick)
         tts?.stop()
         tts?.shutdown()
@@ -270,11 +276,50 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (isNewsDetailOpen) {
-            returnToNewsList()
-        } else {
-            super.onBackPressed()
+        handleBackNavigation()
+    }
+
+    private fun registerBackNavigation() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && backCallback == null) {
+            backCallback = OnBackInvokedCallback { handleBackNavigation() }.also {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, it)
+            }
         }
+    }
+
+    private fun unregisterBackNavigation() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+            backCallback = null
+        }
+    }
+
+    private fun handleBackNavigation() {
+        when {
+            isNewsDetailOpen -> returnToNewsList()
+            activeTab == "sources" -> showSettings()
+            else -> showExitConfirmDialog()
+        }
+    }
+
+    private fun showExitConfirmDialog() {
+        styledFormDialog(
+            title = "退出应用？",
+            body = TextView(this).apply {
+                text = "确认退出聚合热闻吗？"
+                setTextColor(inkSoft)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                typeface = serif
+                setLineSpacing(0f, 1.3f)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+            },
+            primaryLabel = "退出",
+            secondaryLabel = "取消"
+        ) { dialog ->
+            dialog.dismiss()
+            finish()
+        }.show()
     }
 
     override fun onInit(status: Int) {
@@ -1652,14 +1697,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
         status.text = "正在请求大模型锐评..."
+        val progressDialog = showModelProgressDialog(
+            title = "正在生成锐评",
+            message = "正在调用新闻锐评大模型，请稍候。"
+        )
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { AiClient.critique(settings, item.script) }
             }.onSuccess {
+                dismissModelProgressDialog(progressDialog)
                 lastCritique = it
                 status.text = "锐评已生成"
                 showCurrentNewsSurface()
             }.onFailure {
+                dismissModelProgressDialog(progressDialog)
                 status.text = "锐评失败：${it.message ?: "未知错误"}"
             }
         }
@@ -1684,14 +1735,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 return
             }
             status.text = "正在生成远程语音..."
+            val progressDialog = showModelProgressDialog(
+                title = "正在生成语音",
+                message = "正在调用语音播报模型，请稍候。"
+            )
             scope.launch {
                 runCatching {
                     withContext(Dispatchers.IO) { AiClient.speech(this@MainActivity, voice, text.take(3500)) }
                 }.onSuccess { file ->
+                    dismissModelProgressDialog(progressDialog)
                     Log.i(LOG_TAG, "Remote TTS succeeded label=$label file=${file.name} bytes=${file.length()}")
                     playAudio(file)
                     status.text = "正在播放远程语音：$label"
                 }.onFailure {
+                    dismissModelProgressDialog(progressDialog)
                     Log.w(LOG_TAG, "Remote TTS failed, fallback to local TTS endpoint=${redactedEndpoint(voice.endpoint)} model=${voice.model}", it)
                     speakWithLocalTts(text, label, "远程语音不可用，已使用系统 TTS 播报：$label")
                 }
@@ -2343,6 +2400,66 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         return dialog
     }
 
+    private fun showModelProgressDialog(title: String, message: String): AlertDialog {
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+                addView(ProgressBar(context).apply {
+                    isIndeterminate = true
+                    indeterminateTintList = ColorStateList.valueOf(redDeep)
+                }, LinearLayout.LayoutParams(dp(26), dp(26)).apply {
+                    setMargins(0, 0, dp(12), 0)
+                })
+                addView(TextView(context).apply {
+                    text = message
+                    setTextColor(inkSoft)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    typeface = serif
+                    setLineSpacing(0f, 1.3f)
+                    includeFontPadding = false
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+            })
+        }
+        return AlertDialog.Builder(this)
+            .setView(FrameLayout(this).apply {
+                setPadding(dp(18), dp(22), dp(18), dp(22))
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(18), dp(18), dp(18), dp(18))
+                    background = rounded(Color.argb(248, 255, 253, 248), 24, line, 1)
+                    elevation = dp(10).toFloat()
+                    addView(TextView(context).apply {
+                        text = title
+                        setTextColor(ink)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+                        typeface = serifBold
+                        includeFontPadding = false
+                    })
+                    addView(body, LinearLayout.LayoutParams(-1, -2).apply {
+                        topMargin = dp(14)
+                    })
+                })
+            })
+            .create()
+            .apply {
+                setCancelable(false)
+                setCanceledOnTouchOutside(false)
+                setOnShowListener {
+                    window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    window?.setDimAmount(0.38f)
+                }
+                show()
+            }
+    }
+
+    private fun dismissModelProgressDialog(dialog: AlertDialog) {
+        if (dialog.isShowing && !isFinishing) dialog.dismiss()
+    }
+
     private fun styledActionDialog(title: String, items: List<DialogActionItem>): AlertDialog {
         val shell = FrameLayout(this).apply {
             setPadding(dp(18), dp(22), dp(18), dp(22))
@@ -2502,7 +2619,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(14), 0, 0)
         }
-        val primaryIcon = if (primary.contains("保存")) "save" else "check"
+        val primaryIcon = when {
+            primary.contains("保存") -> "save"
+            primary.contains("退出") -> "close"
+            else -> "check"
+        }
         val secondaryIcon = if (secondary.contains("语音")) "speaker" else "check"
         actions.addView(iconPillButton(primary, primaryIcon, ghost = false, action = primaryAction), pillWrapParams())
         actions.addView(iconPillButton(secondary, secondaryIcon, ghost = true, strongGhost = true, action = secondaryAction), pillWrapParams(0))
@@ -2545,16 +2666,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         Log.i(LOG_TAG, "AI settings self-test started endpoint=${redactedEndpoint(settings.endpoint)} model=${settings.model}")
         status.text = "正在自检新闻锐评接口..."
+        val progressDialog = showModelProgressDialog(
+            title = "正在自检锐评接口",
+            message = "正在调用新闻锐评大模型测试配置，请稍候。"
+        )
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     AiClient.critique(settings, "测试新闻稿：某地发布便民服务新举措，请给出20字以内简短锐评。")
                 }
             }.onSuccess {
+                dismissModelProgressDialog(progressDialog)
                 Log.i(LOG_TAG, "AI settings self-test succeeded chars=${it.length}")
                 status.text = "锐评接口自检成功：${it.ifBlank { "返回为空" }.take(80)}"
                 toast("锐评接口自检成功")
             }.onFailure {
+                dismissModelProgressDialog(progressDialog)
                 Log.w(LOG_TAG, "AI settings self-test failed endpoint=${redactedEndpoint(settings.endpoint)} model=${settings.model}", it)
                 status.text = "锐评接口自检失败：${it.message ?: "未知错误"}"
                 toast("锐评接口自检失败")
@@ -2594,15 +2721,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         Log.i(LOG_TAG, "Remote voice self-test started endpoint=${redactedEndpoint(settings.endpoint)} model=${settings.model} voice=${settings.voice}")
         status.text = "正在自检远程语音接口..."
+        val progressDialog = showModelProgressDialog(
+            title = "正在自检语音接口",
+            message = "正在调用语音播报模型测试配置，请稍候。"
+        )
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { AiClient.speech(this@MainActivity, settings, "聚合热闻远程语音接口自检。") }
             }.onSuccess { file ->
+                dismissModelProgressDialog(progressDialog)
                 Log.i(LOG_TAG, "Remote voice self-test succeeded file=${file.name} bytes=${file.length()}")
                 playAudio(file)
                 status.text = "远程语音接口自检成功，正在播放测试音频"
                 toast("远程语音自检成功")
             }.onFailure {
+                dismissModelProgressDialog(progressDialog)
                 Log.w(LOG_TAG, "Remote voice self-test failed endpoint=${redactedEndpoint(settings.endpoint)} model=${settings.model} voice=${settings.voice}", it)
                 speakWithLocalTts(
                     "聚合热闻远程语音接口不可用，已回退系统语音播报。",
