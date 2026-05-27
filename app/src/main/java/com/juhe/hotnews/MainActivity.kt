@@ -1999,6 +1999,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         })
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, 0)
+            addView(iconMiniButton("编辑", "edit") { editSource(source) }, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                setMargins(0, 0, dp(6), 0)
+            })
+            addView(iconMiniButton(if (source.enabled) "停用" else "启用", if (source.enabled) "close" else "check") {
+                toggleSourceEnabled(source)
+            }, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                setMargins(0, 0, dp(6), 0)
+            })
+            addView(iconMiniButton("删除", "close") {
+                confirmDeleteSource(source)
+            }, LinearLayout.LayoutParams(0, dp(34), 1f))
+        })
     }.also {
         it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, dp(10))
@@ -2012,18 +2027,47 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 DialogActionItem("编辑范围", "edit") { editSource(source) },
                 DialogActionItem("测试抓取", "refresh") { testSource(source) },
                 DialogActionItem(if (source.enabled) "停用范围" else "启用范围", if (source.enabled) "close" else "check") {
-                    store.saveSources(store.sources().map {
-                        if (it.id == source.id) it.copy(enabled = !it.enabled) else it
-                    })
-                    showSources()
+                    toggleSourceEnabled(source)
                 },
                 DialogActionItem("删除范围", "close", redDeep) {
-                    store.saveSources(store.sources().filterNot { it.id == source.id })
-                    showSources()
+                    confirmDeleteSource(source)
                 },
                 DialogActionItem("范围管理", "save") { showSourceManagementActions() }
             )
         ).show()
+    }
+
+    private fun toggleSourceEnabled(source: NewsSource) {
+        store.saveSources(store.sources().map {
+            if (it.id == source.id) it.copy(enabled = !it.enabled) else it
+        })
+        status.text = if (source.enabled) "已停用 ${source.name}" else "已启用 ${source.name}"
+        showSources()
+    }
+
+    private fun confirmDeleteSource(source: NewsSource) {
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = "确定删除「${source.name}」吗？删除后将不再抓取这个范围。"
+                setTextColor(inkSoft)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = serif
+                setLineSpacing(0f, 1.28f)
+                includeFontPadding = false
+            })
+        }
+        styledFormDialog(
+            title = "删除抓取范围",
+            body = body,
+            primaryLabel = "删除",
+            secondaryLabel = "取消"
+        ) { dialog ->
+            store.saveSources(store.sources().filterNot { it.id == source.id })
+            dialog.dismiss()
+            status.text = "已删除 ${source.name}"
+            showSources()
+        }.show()
     }
 
     private fun showSourceManagementActions() {
@@ -2189,9 +2233,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 toast("这个 URL 已存在")
                 return@styledFormDialog
             }
-            val sources = store.sources().filterNot { it.id == source.id } + source
+            val currentSources = store.sources()
+            val sources = if (existing == null) {
+                currentSources + source
+            } else {
+                currentSources.map { if (it.id == source.id) source else it }
+                    .let { updated -> if (updated.any { it.id == source.id }) updated else updated + source }
+            }
             store.saveSources(sources)
             dialog.dismiss()
+            status.text = if (existing == null) "已新增 ${source.name}" else "已保存 ${source.name}"
             showSources()
         }.show()
     }
