@@ -226,6 +226,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var lastNewsUpdatedAtText: String = ""
     private var keywordFilter: String = ""
     private var feedMode: String = "all"
+    private var platformFilter: String = "all"
     private var scopeFilter: String = "all"
     private var playQueue: List<NewsItem> = emptyList()
     private var playQueueIndex: Int = 0
@@ -253,6 +254,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         items = store.cachedNews()
         keywordFilter = store.keywordFilter()
         feedMode = store.feedMode()
+        platformFilter = store.platformFilter()
         scopeFilter = store.scopeFilter()
         restoreReadableStartupFilters()
         buildShell()
@@ -403,9 +405,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (items.isEmpty() || visibleItems().isNotEmpty()) return
         keywordFilter = ""
         feedMode = "all"
+        platformFilter = "all"
         scopeFilter = "all"
         store.saveKeywordFilter(keywordFilter)
         store.saveFeedMode(feedMode)
+        store.savePlatformFilter(platformFilter)
         store.saveScopeFilter(scopeFilter)
     }
 
@@ -470,6 +474,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         renderTabs()
         content.setPadding(dp(14), dp(14), dp(14), dp(20))
         renderFilter()
+        renderPlatformFilter()
         renderScopeFilter()
         renderNewsUpdateState()
         renderNewsList()
@@ -998,10 +1003,43 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }, LinearLayout.LayoutParams(-1, -2))
     }
 
+    private fun renderPlatformFilter() {
+        val platforms = platformOptions()
+        if (platforms.size <= 1) return
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(1), 0, dp(1), dp(10))
+        }
+        platforms.forEach { platform ->
+            val active = platformFilter == platform
+            val label = if (platform == "all") "全部平台" else platform
+            val count = if (platform == "all") items.size else items.count { it.source.ifBlank { "未知平台" } == platform }
+            row.addView(chipView("$label $count", active) {
+                platformFilter = platform
+                store.savePlatformFilter(platformFilter)
+                selected = null
+                showReadableTab()
+            }, LinearLayout.LayoutParams(-2, dp(34)).apply {
+                setMargins(0, 0, dp(7), 0)
+            })
+        }
+        content.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(row)
+        }, LinearLayout.LayoutParams(-1, -2))
+    }
+
     private fun scopeOptions(): List<String> {
         val fromItems = items.map { it.scope.ifBlank { "综合" } }
         val fromSources = store.sources().map { it.scope.ifBlank { "综合" } }
         return listOf("all") + (fromItems + fromSources).distinct().sorted()
+    }
+
+    private fun platformOptions(): List<String> {
+        val platforms = items.map { it.source.ifBlank { "未知平台" } }
+            .distinct()
+            .sortedByDescending { platform -> items.count { it.source.ifBlank { "未知平台" } == platform } }
+        return listOf("all") + platforms
     }
 
     private fun showReadableTab() {
@@ -1058,10 +1096,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         if (visible.isEmpty()) {
             val reason = listOfNotNull(
+                if (platformFilter != "all") "平台“$platformFilter”" else null,
                 if (scopeFilter != "all") "范围“$scopeFilter”" else null,
                 if (keywordFilter.isNotBlank()) "关键词“$keywordFilter”" else null
             ).joinToString("、").ifBlank { "当前条件" }
-            content.addView(note("没有匹配$reason 的新闻，调整范围或清空筛选后可查看其他稿件。"))
+            content.addView(note("没有匹配$reason 的新闻，调整平台、范围或清空筛选后可查看其他稿件。"))
             return
         }
         visible.forEachIndexed { index, item ->
@@ -1433,7 +1472,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             "unread" -> items.filter { !it.read }
             else -> items
         }
-        val scopeFiltered = if (scopeFilter == "all") modeFiltered else modeFiltered.filter {
+        val platformFiltered = if (platformFilter == "all") modeFiltered else modeFiltered.filter {
+            it.source.ifBlank { "未知平台" } == platformFilter
+        }
+        val scopeFiltered = if (scopeFilter == "all") platformFiltered else platformFiltered.filter {
             it.scope.ifBlank { "综合" } == scopeFilter
         }
         if (key.isBlank()) return scopeFiltered
@@ -1670,7 +1712,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (visible.isEmpty()) return ""
         return buildString {
             appendLine("聚合热闻可见标题清单")
-            appendLine("范围：${if (scopeFilter == "all") "全部范围" else scopeFilter}；关键词：${keywordFilter.ifBlank { "无" }}。")
+            appendLine("平台：${if (platformFilter == "all") "全部平台" else platformFilter}；范围：${if (scopeFilter == "all") "全部范围" else scopeFilter}；关键词：${keywordFilter.ifBlank { "无" }}。")
             visible.take(80).forEachIndexed { index, item ->
                 appendLine("${index + 1}. ${item.title}（${item.source} / ${item.scope.ifBlank { "综合" }} / ${item.publishedAt.ifBlank { "未知时间" }}）")
             }
@@ -3668,6 +3710,12 @@ class AppStore(context: Context) {
         prefs.edit().putString("feed_mode", value).apply()
     }
 
+    fun platformFilter(): String = prefs.getString("platform_filter", "all") ?: "all"
+
+    fun savePlatformFilter(value: String) {
+        prefs.edit().putString("platform_filter", value).apply()
+    }
+
     fun scopeFilter(): String = prefs.getString("scope_filter", "all") ?: "all"
 
     fun saveScopeFilter(value: String) {
@@ -3713,14 +3761,7 @@ class AppStore(context: Context) {
     }
 
     private fun defaultSources() = listOf(
-        NewsSource("momoyu-hot", "摸摸鱼聚合热榜", "https://www.momoyu.cc/api/hot/list?type=0", "momoyu_hot", "热榜"),
-        NewsSource("baidu-realtime", "百度热搜", "https://top.baidu.com/board?tab=realtime", "baidu_hot", "热榜"),
-        NewsSource("toutiao-hot", "今日头条热榜", "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", "toutiao_hot", "热榜"),
-        NewsSource("kr36-flash", "36氪快讯", "https://36kr.com/newsflashes", "kr36_flash", "科技"),
-        NewsSource("ithome-rss", "IT之家", "https://www.ithome.com/rss/", "rss", "科技"),
-        NewsSource("thepaper-hot", "澎湃热点", "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar", "thepaper_hot", "综合"),
-        NewsSource("v2ex-hot", "V2EX 热门", "https://www.v2ex.com/?tab=hot", "v2ex_hot", "社区"),
-        NewsSource("sspai-home", "少数派首页", "https://sspai.com", "sspai_home", "科技")
+        NewsSource("momoyu-hot", "摸摸鱼聚合热榜", "https://www.momoyu.cc/api/hot/list?type=0", "momoyu_hot", "全网热榜")
     )
 }
 
@@ -3856,7 +3897,7 @@ class NewsRepository {
                 val o = data.optJSONObject(index) ?: continue
                 val title = o.optString("title").trim()
                 if (title.isBlank()) continue
-                val link = o.optString("link").trim()
+                val link = normalizeMomoyuLink(o.optString("link").trim())
                 val extra = o.optString("extra").trim()
                 val itemId = o.optString("id").ifBlank { link.ifBlank { title } }
                 items += NewsItem(
@@ -3875,6 +3916,11 @@ class NewsRepository {
             }
         }
         return items.distinctBy { it.id }.take(300)
+    }
+
+    private fun normalizeMomoyuLink(link: String): String = when {
+        link.startsWith("//") -> "https:$link"
+        else -> link
     }
 
     private fun fetchToutiaoHot(source: NewsSource): List<NewsItem> {
@@ -4085,8 +4131,20 @@ class NewsRepository {
 }
 
 private val SUPPORTED_SOURCE_TYPES = setOf("rss", "cctv_jsonp", "momoyu_hot", "toutiao_hot", "baidu_hot", "kr36_flash", "thepaper_hot", "v2ex_hot", "sspai_home")
-private val REMOVED_DEFAULT_SOURCE_IDS = setOf("cctv-news", "cctv-china", "cctv-world", "china-daily-cn")
-private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 4
+private val REMOVED_DEFAULT_SOURCE_IDS = setOf(
+    "cctv-news",
+    "cctv-china",
+    "cctv-world",
+    "china-daily-cn",
+    "baidu-realtime",
+    "toutiao-hot",
+    "kr36-flash",
+    "ithome-rss",
+    "thepaper-hot",
+    "v2ex-hot",
+    "sspai-home"
+)
+private const val DEFAULT_SOURCE_TEMPLATE_VERSION = 5
 private const val GITHUB_REPO = "lonnnnnng/HotNews"
 
 object UpdateClient {
