@@ -185,18 +185,21 @@ private val topicStopWords = setOf(
 private const val LOG_TAG = "JuheHotNews"
 
 class MainActivity : Activity(), TextToSpeech.OnInitListener {
-    private val ink = Color.rgb(18, 16, 13)
-    private val inkSoft = Color.rgb(56, 52, 47)
-    private val muted = Color.rgb(116, 111, 103)
-    private val paper = Color.rgb(250, 248, 242)
-    private val panel = Color.rgb(255, 253, 248)
-    private val line = Color.rgb(222, 216, 203)
-    private val red = Color.rgb(200, 37, 43)
-    private val redDeep = Color.rgb(132, 25, 29)
-    private val jade = Color.rgb(13, 125, 105)
-    private val cobalt = Color.rgb(32, 89, 183)
+    private val ink = Color.rgb(63, 41, 38)
+    private val inkSoft = Color.rgb(91, 53, 48)
+    private val muted = Color.rgb(138, 112, 107)
+    private val paper = Color.rgb(255, 248, 245)
+    private val panel = Color.rgb(255, 255, 255)
+    private val panelSoft = Color.rgb(255, 253, 251)
+    private val line = Color.rgb(241, 214, 206)
+    private val red = Color.rgb(178, 74, 64)
+    private val redDeep = Color.rgb(169, 68, 59)
+    private val jade = Color.rgb(21, 128, 61)
+    private val cobalt = Color.rgb(189, 91, 69)
     private val gold = Color.rgb(201, 148, 47)
-    private val mist = Color.rgb(238, 243, 237)
+    private val mist = Color.rgb(251, 240, 235)
+    private val tabFill = Color.rgb(250, 236, 231)
+    private val statusFill = Color.rgb(255, 247, 243)
     private val serif = Typeface.SERIF
     private val serifBold = Typeface.create(Typeface.SERIF, Typeface.BOLD)
     private val condensed = Typeface.create("sans-serif-condensed", Typeface.NORMAL)
@@ -299,7 +302,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun handleBackNavigation() {
         when {
             isNewsDetailOpen -> returnToNewsList()
-            activeTab == "sources" -> showSettings()
+            activeTab in setOf("sources", "ai_settings", "voice_settings") -> showSettings()
             else -> showExitConfirmDialog()
         }
     }
@@ -314,7 +317,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 typeface = serif
                 setLineSpacing(0f, 1.3f)
                 setPadding(dp(12), dp(12), dp(12), dp(12))
-                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+                background = rounded(mist, 16, line, 1)
             },
             primaryLabel = "退出",
             secondaryLabel = "取消"
@@ -376,8 +379,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         scrollView.addView(content)
         swipeRefresh = SwipeRefreshLayout(this).apply {
-            setColorSchemeColors(redDeep, jade, gold)
-            setProgressBackgroundColorSchemeColor(Color.rgb(255, 253, 248))
+            setColorSchemeColors(redDeep, cobalt, gold)
+            setProgressBackgroundColorSchemeColor(panelSoft)
             setOnChildScrollUpCallback { _, _ -> scrollView.canScrollVertically(-1) }
             setOnRefreshListener {
                 if (activeTab == "news") {
@@ -396,12 +399,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(9), dp(8), dp(9), dp(8))
-            background = rounded(Color.argb(230, 255, 253, 248), 25, line, 1)
-            elevation = dp(6).toFloat()
+            setPadding(dp(12), dp(8), dp(12), dp(12))
+            background = rounded(Color.WHITE, 0, line, 1)
+            elevation = 0f
         }
-        root.addView(tabBar, LinearLayout.LayoutParams(-1, dp(66)).apply {
-            setMargins(dp(12), 0, dp(12), dp(12))
+        root.addView(tabBar, LinearLayout.LayoutParams(-1, dp(70)).apply {
+            setMargins(0, 0, 0, 0)
         })
         setContentView(root)
         root.requestApplyInsets()
@@ -428,7 +431,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             "briefing" to "简报",
             "settings" to "设置"
         ).forEach { (id, label) ->
-                val active = activeTab == id || (activeTab == "sources" && id == "settings")
+                val active = activeTab == id || (activeTab in setOf("sources", "ai_settings", "voice_settings") && id == "settings")
                 tabBar.addView(LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
@@ -437,20 +440,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     isFocusable = true
                     setPadding(0, dp(4), 0, dp(4))
                     background = rounded(
-                        if (active) Color.argb(18, 200, 37, 43) else Color.TRANSPARENT,
-                        18,
-                        if (active) Color.argb(48, 200, 37, 43) else null,
-                        if (active) 1 else 0
+                        if (active) redDeep else Color.TRANSPARENT,
+                        18
                     )
                     addClickFeedback(18)
-                    addView(TabIconView(context, id, if (active) redDeep else muted), LinearLayout.LayoutParams(dp(18), dp(18)))
+                    addView(TabIconView(context, id, if (active) Color.WHITE else muted), LinearLayout.LayoutParams(dp(18), dp(18)))
                     addView(TextView(context).apply {
                         text = label
                         gravity = Gravity.CENTER
                         includeFontPadding = false
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
                         typeface = condensedBold
-                        setTextColor(if (active) redDeep else muted)
+                        setTextColor(if (active) Color.WHITE else muted)
                         setPadding(0, dp(5), 0, 0)
                     }, LinearLayout.LayoutParams(-2, -2))
                     setOnClickListener {
@@ -481,10 +482,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         renderTabs()
         headerArea.removeAllViews()
         content.setPadding(dp(14), 0, dp(14), dp(20))
-        val pinned = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(10))
-        }
+        val pinned = fixedHeaderShell()
+        pinned.addView(pageHeader("实时热闻", trailing = roundIconButton(if (isNewsRefreshing) "更新中" else "刷新", "refresh") {
+            if (isNewsRefreshing) {
+                toast("正在更新新闻列表")
+                return@roundIconButton
+            }
+            isNewsRefreshing = true
+            status.text = "正在更新新闻列表..."
+            showNews()
+            refreshNews()
+        }), LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(12))
+        })
         renderFilter(pinned)
         renderPlatformFilter(pinned)
         renderNewsUpdateState(pinned)
@@ -531,10 +541,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         renderTabs()
         headerArea.removeAllViews()
         content.setPadding(dp(14), 0, dp(14), dp(20))
-        val pinned = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(10))
-        }
+        val pinned = fixedHeaderShell()
+        pinned.addView(pageHeader("今日日报", trailing = roundIconButton(if (isBriefingRefreshing) "更新中" else "更新", "refresh") {
+            if (isBriefingRefreshing) {
+                toast("正在更新简报")
+                return@roundIconButton
+            }
+            isBriefingRefreshing = true
+            status.text = "正在重新聚合今日日报..."
+            showBriefing()
+            refreshNews()
+        }), LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(12))
+        })
         val dailyReport = dailyReportText()
         pinned.addView(reportCardHeader(dailyReport))
         headerArea.addView(pinned)
@@ -553,7 +572,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(13), 0, dp(13), 0)
-            background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+            background = rounded(statusFill, 14, line, 1)
             addView(StrokeIconView(context, "pulse", muted), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 setMargins(0, 0, dp(10), 0)
             })
@@ -581,8 +600,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun topicCard(topic: HotTopic, rank: Int): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
+        background = rounded(panel, 18, line, 1)
+        elevation = 0f
         isClickable = true
         isFocusable = true
         contentDescription = "热点话题 ${topic.title}"
@@ -677,67 +696,24 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun reportCardHeader(report: String): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
+        setPadding(dp(0), 0, dp(0), 0)
         isClickable = true
         isFocusable = true
-        addClickFeedback(24)
         setOnClickListener { showReportActions(report) }
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(TextView(context).apply {
-                text = "聚合热闻今日日报"
-                setTextColor(ink)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                typeface = serifBold
-                includeFontPadding = false
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(iconMiniButton(if (isBriefingRefreshing) "更新中" else "更新", "refresh") {
-                if (isBriefingRefreshing) {
-                    toast("正在更新简报")
-                    return@iconMiniButton
-                }
-                isBriefingRefreshing = true
-                status.text = "正在重新聚合今日日报..."
-                showBriefing()
-                refreshNews()
-            }, LinearLayout.LayoutParams(dp(if (isBriefingRefreshing) 96 else 86), dp(36)).apply {
-                setMargins(dp(10), 0, 0, 0)
-            })
-        })
         if (isBriefingRefreshing) {
             addView(briefingRefreshProgress(), LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, dp(12), 0, 0)
+                setMargins(0, 0, 0, dp(10))
             })
         }
+        addView(softStatusRow(
+            textValue = "每个平台抽样 10 条 · ${reportUpdatedAtText()}",
+            loading = isBriefingRefreshing
+        ), LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(10))
+        })
         addView(metaBadges(listOf("${reportSampleItems().size} 条样本", reportScopeLabel(), "自动生成")), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, dp(10), 0, dp(10))
+            setMargins(0, 0, 0, 0)
         })
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(View(context).apply {
-                background = rounded(red, 999)
-            }, LinearLayout.LayoutParams(dp(4), -1).apply {
-                setMargins(0, 0, dp(12), 0)
-            })
-            addView(TextView(context).apply {
-                text = report
-                contentDescription = "新闻日报内容"
-                setTextColor(inkSoft)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                typeface = serif
-                setLineSpacing(0f, 1.34f)
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        })
-        val actions = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(13), 0, 0)
-        }
-        actions.addView(iconPillButton("复制日报", "briefing") { copyText("daily_report", report, "日报已复制") }, pillWrapParams())
-        actions.addView(iconPillButton("播报日报", "speaker", ghost = true) { speakText(report, "今日日报") }, pillWrapParams(0))
-        addView(actions)
     }.also {
         it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, dp(12))
@@ -756,7 +732,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     typeface = condensedBold
                     includeFontPadding = false
                     setPadding(dp(8), dp(6), dp(8), dp(6))
-                    background = rounded(if (index == 0) Color.rgb(255, 247, 244) else Color.rgb(255, 250, 242), 999, line, 1)
+                    background = rounded(if (index == 0) tabFill else statusFill, 999, line, 1)
                 }, LinearLayout.LayoutParams(-2, -2).apply {
                     setMargins(0, 0, dp(7), 0)
                 })
@@ -768,7 +744,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        background = rounded(statusFill, 14, line, 1)
         addView(ProgressBar(context).apply {
             isIndeterminate = true
             indeterminateTintList = ColorStateList.valueOf(redDeep)
@@ -792,8 +768,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun reportCardBody(report: String): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
+        background = rounded(panel, 18, line, 1)
+        elevation = 0f
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(View(context).apply {
@@ -856,22 +832,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(13), 0, dp(13), 0)
-            background = rounded(Color.argb(199, 255, 255, 255), 16, line, 1)
-            elevation = dp(1).toFloat()
+            background = rounded(panelSoft, 16, line, 1)
+            elevation = 0f
         }
         shell.addView(StrokeIconView(this, "search", muted), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
             setMargins(0, 0, dp(10), 0)
         })
         val input = EditText(this).apply {
-            hint = "标题 / 摘要 / 来源 / 范围"
+            hint = "搜索标题 / 来源 / 关键词"
             setText(keywordFilter)
             setTextColor(ink)
             setHintTextColor(muted)
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             contentDescription = "关键词筛选输入框"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = condensedBold
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Typeface.DEFAULT_BOLD
             background = null
             setPadding(0, 0, 0, 0)
             includeFontPadding = false
@@ -889,18 +865,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         shell.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(shell, LinearLayout.LayoutParams(0, dp(44), 1f))
-        row.addView(roundIconButton(if (isNewsRefreshing) "更新中" else "刷新", "refresh") {
-            if (isNewsRefreshing) {
-                toast("正在更新新闻列表")
-                return@roundIconButton
-            }
-            isNewsRefreshing = true
-            status.text = "正在更新新闻列表..."
-            showNews()
-            refreshNews()
-        }, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
-            setMargins(dp(10), 0, 0, 0)
-        })
         container.addView(row)
     }
 
@@ -939,7 +903,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(1), 0, dp(1), dp(10))
+            setPadding(dp(1), 0, dp(1), dp(12))
         }
         platforms.forEach { platform ->
             val active = platformFilter == platform
@@ -985,38 +949,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun renderNewsUpdateState(container: LinearLayout) {
         updateHeaderSummary()
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
-        }
-        if (isNewsRefreshing) {
-            row.addView(ProgressBar(this).apply {
-                isIndeterminate = true
-                indeterminateTintList = ColorStateList.valueOf(redDeep)
-            }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
-                setMargins(0, 0, dp(10), 0)
-            })
+        val textValue = if (isNewsRefreshing) {
+            "正在抓取各平台热榜..."
         } else {
-            row.addView(StrokeIconView(this, "refresh", muted), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
-                setMargins(0, 0, dp(10), 0)
-            })
+            "更新时间：${lastNewsUpdatedAtText.ifBlank { reportUpdatedAtText() }} UTC+8"
         }
-        row.addView(TextView(this).apply {
-            text = if (isNewsRefreshing) {
-                "正在抓取来源并更新新闻列表..."
-            } else {
-                "更新时间：${lastNewsUpdatedAtText.ifBlank { reportUpdatedAtText() }}"
-            }
-            setTextColor(if (isNewsRefreshing) inkSoft else muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = if (isNewsRefreshing) serifBold else condensedBold
-            includeFontPadding = false
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        container.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+        container.addView(softStatusRow(textValue, isNewsRefreshing), LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, dp(14))
         })
     }
@@ -1039,24 +977,24 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         visible.forEachIndexed { index, item ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(dp(12), dp(11), dp(12), dp(11))
+                setPadding(dp(11), dp(10), dp(11), dp(10))
                 background = rounded(
-                    Color.argb(230, 255, 253, 248),
-                    18,
+                    panel,
+                    16,
                     line,
                     1
                 )
-                elevation = dp(2).toFloat()
+                elevation = 0f
             }
             row.addView(TextView(this).apply {
                 text = (index + 1).toString()
                 gravity = Gravity.CENTER
-                setTextColor(panel)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                setTextColor(redDeep)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 typeface = Typeface.DEFAULT_BOLD
                 includeFontPadding = false
-                background = rounded(red, 13, null, 0)
-            }, LinearLayout.LayoutParams(dp(30), dp(30)).apply {
+                background = rounded(mist, 12, null, 0)
+            }, LinearLayout.LayoutParams(dp(32), dp(32)).apply {
                 setMargins(0, 0, dp(10), 0)
             })
             row.addView(LinearLayout(this).apply {
@@ -1066,9 +1004,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     setTextColor(if (item.read) inkSoft else ink)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
                     typeface = serifBold
-                    setLineSpacing(0f, 1.12f)
-                    maxLines = 1
+                    setLineSpacing(0f, 1.14f)
+                    maxLines = 2
                     ellipsize = TextUtils.TruncateAt.END
+                    includeFontPadding = false
                 })
                 val time = item.publishedAt.substringAfter(" ", item.publishedAt).take(5).ifBlank { "未知" }
                 addView(metaBadges(listOf(item.source, item.scope.ifBlank { "综合" }, time)), LinearLayout.LayoutParams(-1, -2).apply {
@@ -1076,7 +1015,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             row.addView(StrokeIconView(this, "chevron", muted), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
-                setMargins(dp(8), dp(7), 0, 0)
+                setMargins(dp(7), dp(8), 0, 0)
             })
             row.isClickable = true
             row.isFocusable = true
@@ -1093,7 +1032,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 true
             }
             container.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, 0, 0, dp(8))
+                setMargins(0, 0, 0, dp(9))
             })
         }
     }
@@ -1162,8 +1101,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isNewsDetailOpen = true
         swipeRefresh.isEnabled = false
         tabBar.visibility = View.GONE
+        headerArea.removeAllViews()
         content.removeAllViews()
-        content.setPadding(dp(14), dp(14), dp(14), dp(24))
+        content.setPadding(dp(14), 0, dp(14), dp(24))
         renderNewsDetailHeader(item)
         renderNewsBodyCard(item)
         renderCritiqueCard()
@@ -1183,30 +1123,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun renderNewsDetailHeader(item: NewsItem) {
+        headerArea.addView(fixedHeaderShell().apply {
+            addView(pageHeader("新闻详情", leading = roundIconButton("返回", "back") { returnToNewsList() }))
+        })
         content.addView(leadCard {
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(iconMiniButton("返回", "back") { returnToNewsList() }, LinearLayout.LayoutParams(dp(82), dp(36)))
-                addView(TextView(context).apply {
-                    text = "新闻详情"
-                    setTextColor(muted)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                    typeface = condensedBold
-                    gravity = Gravity.END
-                    includeFontPadding = false
-                }, LinearLayout.LayoutParams(0, -2, 1f))
-            })
             addView(TextView(context).apply {
                 text = item.title
                 setTextColor(ink)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f)
                 typeface = serifBold
                 setLineSpacing(0f, 1.12f)
-                setPadding(0, dp(16), 0, dp(10))
                 includeFontPadding = false
             })
-            addView(metaBadges(listOf(item.source, item.scope.ifBlank { "综合" }, item.publishedAt.ifBlank { "未知时间" })))
+            addView(metaBadges(listOf(item.source, item.scope.ifBlank { "综合" }, item.publishedAt.ifBlank { "未知时间" })), LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
+            })
         })
     }
 
@@ -1276,7 +1207,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 listOf(18, 28, 20, 34, 24, 30, 16).forEachIndexed { index, height ->
                     addView(View(context).apply {
                         background = rounded(
-                            if (index % 2 == 0) Color.argb(94, 200, 37, 43) else Color.argb(84, 13, 125, 105),
+                            if (index % 2 == 0) Color.argb(96, Color.red(red), Color.green(red), Color.blue(red)) else Color.argb(84, Color.red(cobalt), Color.green(cobalt), Color.blue(cobalt)),
                             999
                         )
                     }, LinearLayout.LayoutParams(dp(6), dp(height)).apply {
@@ -1855,9 +1786,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
-        content.setPadding(dp(14), dp(14), dp(14), dp(20))
+        headerArea.removeAllViews()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
         val diagnostics = store.sourceDiagnostics().associateBy { it.sourceId }
-        content.addView(sourceSettingsHeader(diagnostics.values.toList()))
+        headerArea.addView(sourceSettingsHeader(diagnostics.values.toList()))
         content.addView(sourceTools())
         store.sources().forEach { source ->
             content.addView(sourceCard(source, diagnostics[source.id]))
@@ -1869,25 +1801,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val enabledCount = sources.count { it.enabled }
         val onlineCount = diagnostics.count { it.success }.takeIf { diagnostics.isNotEmpty() } ?: enabledCount
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
-        addView(TextView(context).apply {
-            text = "抓取范围设置"
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
-            typeface = serifBold
-            includeFontPadding = false
+        setPadding(dp(14), dp(14), dp(14), dp(12))
+        background = rounded(Color.argb(235, 255, 255, 255), 0, line, 1)
+        addView(pageHeader(
+            "新闻源配置",
+            leading = roundIconButton("返回", "back") { showSettings() },
+            trailing = roundIconButton("新增", "edit") { editSource(null) }
+        ), LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(10))
         })
-        addView(TextView(context).apply {
-            text = "管理默认媒体源和自定义热榜源，启停、测试、导入导出都在这里完成。"
-            setTextColor(inkSoft)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = serif
-            setLineSpacing(0f, 1.18f)
-            setPadding(0, dp(9), 0, dp(12))
-        })
-        addView(metaBadges(listOf("$enabledCount / ${sources.size} 启用", "$onlineCount 个在线", "设置入口")))
+        addView(softStatusRow("$enabledCount / ${sources.size} 启用 · $onlineCount 个在线 · 最近测试 ${diagnostics.sumOf { it.itemCount }} 条"))
     }.also {
         it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, dp(12))
@@ -1911,8 +1834,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun sourceCard(source: NewsSource, diagnostic: SourceDiagnostic?): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(15), dp(16), dp(15))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
+        background = rounded(panel, 18, line, 1)
+        elevation = 0f
         isClickable = true
         isFocusable = true
         contentDescription = "范围${source.name}"
@@ -2247,15 +2170,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         renderTabs()
         headerArea.removeAllViews()
         content.setPadding(dp(14), 0, dp(14), dp(20))
-        val pinned = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(10))
-        }
+        val pinned = fixedHeaderShell()
         pinned.addView(settingsHeader())
         headerArea.addView(pinned)
-        val bodyScroll = ScrollView(this).apply {
-            isFillViewport = true
-        }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 0, 0, dp(20))
@@ -2280,16 +2197,30 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 icon = "refresh"
             ) { checkAppUpdate() })
         }
-        bodyScroll.addView(body)
-        content.addView(bodyScroll, LinearLayout.LayoutParams(-1, -1))
+        content.addView(body, LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun editAiSettingsDialog(settings: AiSettings) {
+        showAiSettingsPage(settings)
+    }
+
+    private fun showAiSettingsPage(settings: AiSettings) {
+        activeTab = "ai_settings"
+        isNewsDetailOpen = false
+        swipeRefresh.isEnabled = false
+        tabBar.visibility = View.VISIBLE
+        content.removeAllViews()
+        headerArea.removeAllViews()
+        renderTabs()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
+        headerArea.addView(fixedHeaderShell().apply {
+            addView(pageHeader("锐评模型配置", leading = roundIconButton("返回", "back") { showSettings() }))
+        })
         val aiEndpoint = edit("Chat Completions Endpoint", settings.endpoint)
         val aiModel = edit("模型", settings.model)
         val aiKey = edit("API Key", settings.apiKey, password = true)
         val aiPrompt = edit("锐评提示词", settings.prompt, multi = true)
-        val box = LinearLayout(this).apply {
+        val box = formCard {
             orientation = LinearLayout.VERTICAL
             listOf(
                 dialogInputBlock("Endpoint", aiEndpoint),
@@ -2301,22 +2232,41 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     if (index > 0) topMargin = dp(10)
                 })
             }
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(14), 0, 0)
+                addView(iconPillButton("保存", "save") {
+                    val saved = AiSettings(aiEndpoint.text.toString(), aiKey.text.toString(), aiModel.text.toString(), aiPrompt.text.toString())
+                    store.saveAiSettings(saved)
+                    toast("已保存锐评设置")
+                    showSettings()
+                }, pillWrapParams())
+                addView(iconPillButton("保存并自检", "check", ghost = true, strongGhost = true) {
+                    val saved = AiSettings(aiEndpoint.text.toString(), aiKey.text.toString(), aiModel.text.toString(), aiPrompt.text.toString())
+                    store.saveAiSettings(saved)
+                    testAiSettings(saved)
+                }, pillWrapParams(0))
+            })
         }
-        val dialog = styledFormDialog(
-            title = "新闻锐评大模型",
-            body = box,
-            primaryLabel = "保存",
-            secondaryLabel = "取消"
-        ) { dialogRef ->
-                store.saveAiSettings(AiSettings(aiEndpoint.text.toString(), aiKey.text.toString(), aiModel.text.toString(), aiPrompt.text.toString()))
-                toast("已保存锐评设置")
-                dialogRef.dismiss()
-                showSettings()
-        }
-        dialog.show()
+        content.addView(box)
     }
 
     private fun editVoiceSettingsDialog(settings: VoiceSettings) {
+        showVoiceSettingsPage(settings)
+    }
+
+    private fun showVoiceSettingsPage(settings: VoiceSettings) {
+        activeTab = "voice_settings"
+        isNewsDetailOpen = false
+        swipeRefresh.isEnabled = false
+        tabBar.visibility = View.VISIBLE
+        content.removeAllViews()
+        headerArea.removeAllViews()
+        renderTabs()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
+        headerArea.addView(fixedHeaderShell().apply {
+            addView(pageHeader("语音播放配置", leading = roundIconButton("返回", "back") { showSettings() }))
+        })
         val localMode = CheckBox(this).apply {
             text = "使用 Android 本地 TTS（取消勾选则使用远程语音模型）"
             isChecked = settings.mode == "local"
@@ -2326,7 +2276,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val voiceModel = edit("语音模型", settings.model)
         val voiceName = edit("音色", settings.voice)
         val voiceKey = edit("API Key", settings.apiKey, password = true)
-        val box = LinearLayout(this).apply {
+        val box = formCard {
             orientation = LinearLayout.VERTICAL
             addView(dialogToggleBlock("Playback", localMode), LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
@@ -2341,48 +2291,53 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     if (index > 0) topMargin = dp(10)
                 })
             }
-        }
-        val dialog = styledFormDialog(
-            title = "语音播报",
-            body = box,
-            primaryLabel = "保存",
-            secondaryLabel = "取消"
-        ) { dialogRef ->
-                store.saveVoiceSettings(
-                    VoiceSettings(
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(14), 0, 0)
+                addView(iconPillButton("保存", "save") {
+                    val saved = VoiceSettings(
                         mode = if (localMode.isChecked) "local" else "remote",
                         endpoint = voiceEndpoint.text.toString(),
                         apiKey = voiceKey.text.toString(),
                         model = voiceModel.text.toString(),
                         voice = voiceName.text.toString()
                     )
-                )
-                toast("已保存语音设置")
-                dialogRef.dismiss()
-                showSettings()
+                    store.saveVoiceSettings(saved)
+                    toast("已保存语音设置")
+                    showSettings()
+                }, pillWrapParams())
+                addView(iconPillButton("保存并自检", "check", ghost = true, strongGhost = true) {
+                    val saved = VoiceSettings(
+                        mode = if (localMode.isChecked) "local" else "remote",
+                        endpoint = voiceEndpoint.text.toString(),
+                        apiKey = voiceKey.text.toString(),
+                        model = voiceModel.text.toString(),
+                        voice = voiceName.text.toString()
+                    )
+                    store.saveVoiceSettings(saved)
+                    testVoiceSettings(saved)
+                }, pillWrapParams(0))
+            })
         }
-        dialog.show()
+        content.addView(box)
     }
 
     private fun settingsHeader(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
+        setPadding(0, 0, 0, 0)
         addView(TextView(context).apply {
             text = "设置"
             setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 25f)
             typeface = serifBold
             includeFontPadding = false
         })
         addView(TextView(context).apply {
-            text = "统一管理新闻源、锐评模型、语音播放和应用更新。"
-            setTextColor(inkSoft)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = serif
-            setLineSpacing(0f, 1.2f)
-            setPadding(0, dp(8), 0, 0)
+            text = "当前版本 ${BuildConfig.VERSION_NAME} · 数据源 momoyu 热榜"
+            setTextColor(muted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = condensedBold
+            setPadding(0, dp(10), 0, 0)
             includeFontPadding = false
         })
     }.also {
@@ -2396,12 +2351,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         gravity = Gravity.CENTER_VERTICAL
         isClickable = true
         isFocusable = true
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 22, line, 1)
-        elevation = dp(1).toFloat()
-        addClickFeedback(22)
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        background = rounded(panel, 18, line, 1)
+        elevation = 0f
+        addClickFeedback(18)
         setOnClickListener { action() }
-        addView(StrokeIconView(context, icon, redDeep), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+        addView(FrameLayout(context).apply {
+            background = rounded(redDeep, 14)
+            addView(StrokeIconView(context, icon, Color.WHITE), FrameLayout.LayoutParams(dp(19), dp(19), Gravity.CENTER))
+        }, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             setMargins(0, 0, dp(12), 0)
         })
         addView(LinearLayout(context).apply {
@@ -2409,7 +2367,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             addView(TextView(context).apply {
                 text = title
                 setTextColor(ink)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 typeface = serifBold
                 includeFontPadding = false
             })
@@ -2430,6 +2388,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun formCard(build: LinearLayout.() -> Unit): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        background = rounded(panel, 18, line, 1)
+        elevation = 0f
+        build()
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(12))
+        }
+    }
+
     private fun styledFormDialog(
         title: String,
         body: View,
@@ -2443,8 +2413,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = rounded(Color.argb(248, 255, 253, 248), 24, line, 1)
-            elevation = dp(10).toFloat()
+            background = rounded(panel, 24, line, 1)
+            elevation = dp(6).toFloat()
             addView(TextView(context).apply {
                 text = title
                 setTextColor(ink)
@@ -2487,7 +2457,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(12), dp(12), dp(12))
-                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+                background = rounded(statusFill, 14, line, 1)
                 addView(ProgressBar(context).apply {
                     isIndeterminate = true
                     indeterminateTintList = ColorStateList.valueOf(redDeep)
@@ -2510,8 +2480,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 addView(LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(18), dp(18), dp(18), dp(18))
-                    background = rounded(Color.argb(248, 255, 253, 248), 24, line, 1)
-                    elevation = dp(10).toFloat()
+                    background = rounded(panel, 24, line, 1)
+                    elevation = dp(6).toFloat()
                     addView(TextView(context).apply {
                         text = title
                         setTextColor(ink)
@@ -2550,8 +2520,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = rounded(Color.argb(248, 255, 253, 248), 24, line, 1)
-            elevation = dp(10).toFloat()
+            background = rounded(panel, 24, line, 1)
+            elevation = dp(6).toFloat()
             addView(TextView(context).apply {
                 text = title
                 setTextColor(ink)
@@ -2595,7 +2565,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun dialogInputBlock(label: String, input: EditText): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(12), dp(12), dp(12), dp(12))
-        background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        background = rounded(statusFill, 14, line, 1)
         addView(TextView(context).apply {
             text = label
             setTextColor(muted)
@@ -2615,7 +2585,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun dialogToggleBlock(label: String, toggle: CheckBox): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(12), dp(12), dp(12), dp(12))
-        background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        background = rounded(statusFill, 14, line, 1)
         addView(TextView(context).apply {
             text = label
             setTextColor(muted)
@@ -2640,7 +2610,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isClickable = true
         isFocusable = true
         setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        background = rounded(statusFill, 14, line, 1)
         addClickFeedback(16)
         addView(StrokeIconView(context, item.icon, item.accent ?: inkSoft), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
             setMargins(0, 0, dp(10), 0)
@@ -2673,8 +2643,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
+        background = rounded(panel, 18, line, 1)
+        elevation = 0f
         addView(TextView(context).apply {
             text = title
             setTextColor(ink)
@@ -2717,7 +2687,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun settingField(label: String, value: String): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(12), dp(12), dp(12), dp(12))
-        background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+        background = rounded(statusFill, 14, line, 1)
         addView(TextView(context).apply {
             text = label
             setTextColor(muted)
@@ -2872,7 +2842,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 typeface = serif
                 setLineSpacing(0f, 1.35f)
                 setPadding(dp(12), dp(12), dp(12), dp(12))
-                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
+                background = rounded(statusFill, 14, line, 1)
             }, LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = dp(10)
             })
@@ -3001,6 +2971,70 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         // Header summary removed from the UI; keep this hook for refresh/filter call sites.
     }
 
+    private fun fixedHeaderShell(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(14), dp(14), dp(12))
+        background = rounded(Color.argb(235, 255, 255, 255), 0, line, 1)
+    }
+
+    private fun pageHeader(textValue: String, leading: View? = null, trailing: View? = null): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(44)
+        leading?.let {
+            addView(it, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                setMargins(0, 0, dp(12), 0)
+            })
+        }
+        addView(pageTitle(textValue), LinearLayout.LayoutParams(0, -2, 1f))
+        trailing?.let {
+            addView(it, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                setMargins(dp(12), 0, 0, 0)
+            })
+        }
+    }
+
+    private fun softStatusRow(textValue: String, loading: Boolean = false): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(34)
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        background = rounded(statusFill, 14, line, 1)
+        if (loading) {
+            addView(ProgressBar(context).apply {
+                isIndeterminate = true
+                indeterminateTintList = ColorStateList.valueOf(redDeep)
+            }, LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                setMargins(0, 0, dp(8), 0)
+            })
+        } else {
+            addView(View(context).apply {
+                background = rounded(jade, 999)
+            }, LinearLayout.LayoutParams(dp(8), dp(8)).apply {
+                setMargins(0, 0, dp(8), 0)
+            })
+        }
+        addView(TextView(context).apply {
+            text = textValue
+            setTextColor(if (loading) inkSoft else muted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = if (loading) serifBold else condensedBold
+            includeFontPadding = false
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+    }
+
+    private fun pageTitle(textValue: String): TextView = TextView(this).apply {
+        text = textValue
+        setTextColor(ink)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 25f)
+        typeface = serifBold
+        includeFontPadding = false
+        setSingleLine(true)
+        ellipsize = TextUtils.TruncateAt.END
+    }
+
     private fun sectionTitle(textValue: String) = TextView(this).apply {
         text = textValue
         setTextColor(ink)
@@ -3035,7 +3069,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         typeface = condensedBold
         stateListAnimator = null
         elevation = 0f
-        background = InsetDrawable(rounded(Color.rgb(255, 254, 250), 14, line, 1), dp(3), 0, dp(3), 0)
+        background = InsetDrawable(rounded(statusFill, 14, line, 1), dp(3), 0, dp(3), 0)
         addClickFeedback(14)
         setOnClickListener { action() }
     }
@@ -3058,7 +3092,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         stateListAnimator = null
         elevation = 0f
         background = InsetDrawable(
-            rounded(if (ghost) Color.argb(174, 255, 253, 248) else Color.WHITE, 999, line, 1),
+            rounded(if (ghost) tabFill else Color.WHITE, 999, line, 1),
             dp(3),
             0,
             dp(3),
@@ -3081,7 +3115,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         background = rounded(
             when {
                 ghost && strongGhost -> Color.WHITE
-                ghost -> Color.argb(174, 255, 253, 248)
+                ghost -> tabFill
                 else -> Color.WHITE
             },
             999,
@@ -3114,7 +3148,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         typeface = Typeface.DEFAULT_BOLD
         stateListAnimator = null
         elevation = 0f
-        background = rounded(Color.argb(235, 255, 253, 248), 16, line, 1)
+        background = rounded(tabFill, 14, line, 1)
         addClickFeedback(16)
         setOnClickListener { action() }
     }
@@ -3124,7 +3158,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         isClickable = true
         isFocusable = true
         contentDescription = label
-        background = rounded(Color.argb(235, 255, 253, 248), 16, line, 1)
+        background = rounded(tabFill, 14, line, 1)
         elevation = 0f
         stateListAnimator = null
         addClickFeedback(16)
@@ -3170,7 +3204,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun leadCard(build: LinearLayout.() -> Unit): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(Color.argb(240, 255, 253, 248), 24, line, 1)
+        background = rounded(panel, 18, line, 1)
         build()
     }.also {
         it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
@@ -3201,11 +3235,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         setPadding(dp(12), 0, dp(12), 0)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
         typeface = if (active) condensedBold else condensed
-        setTextColor(if (active) redDeep else muted)
+        setTextColor(if (active) Color.WHITE else muted)
         background = rounded(
-            if (active) Color.argb(20, 200, 37, 43) else Color.argb(184, 255, 255, 255),
+            if (active) redDeep else tabFill,
             999,
-            if (active) Color.argb(72, 200, 37, 43) else line,
+            if (active) redDeep else Color.TRANSPARENT,
             1
         )
         addClickFeedback(999)
