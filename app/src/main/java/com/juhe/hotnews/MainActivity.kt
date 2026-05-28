@@ -483,7 +483,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         headerArea.removeAllViews()
         content.setPadding(dp(14), 0, dp(14), dp(20))
         val pinned = fixedHeaderShell()
-        pinned.addView(pageHeader("实时热闻", trailing = roundIconButton(if (isNewsRefreshing) "更新中" else "刷新", "refresh") {
+        pinned.addView(pageHeader(
+            textValue = "实时热闻",
+            inlineStatus = newsHeaderStatusText(),
+            inlineStatusLoading = isNewsRefreshing,
+            trailing = roundIconButton(if (isNewsRefreshing) "更新中" else "刷新", "refresh") {
             if (isNewsRefreshing) {
                 toast("正在更新新闻列表")
                 return@roundIconButton
@@ -497,7 +501,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
         renderFilter(pinned)
         renderPlatformFilter(pinned)
-        renderNewsUpdateState(pinned)
         headerArea.removeAllViews()
         headerArea.addView(pinned)
         val feed = LinearLayout(this).apply {
@@ -542,7 +545,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         headerArea.removeAllViews()
         content.setPadding(dp(14), 0, dp(14), dp(20))
         val pinned = fixedHeaderShell()
-        pinned.addView(pageHeader("今日日报", trailing = roundIconButton(if (isBriefingRefreshing) "更新中" else "更新", "refresh") {
+        pinned.addView(pageHeader(
+            textValue = "今日日报",
+            inlineStatus = briefingHeaderStatusText(),
+            inlineStatusLoading = isBriefingRefreshing,
+            trailing = roundIconButton(if (isBriefingRefreshing) "更新中" else "更新", "refresh") {
             if (isBriefingRefreshing) {
                 toast("正在更新简报")
                 return@roundIconButton
@@ -705,12 +712,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setMargins(0, 0, 0, dp(10))
             })
         }
-        addView(softStatusRow(
-            textValue = "每个平台抽样 10 条 · ${reportUpdatedAtText()}",
-            loading = isBriefingRefreshing
-        ), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(10))
-        })
         addView(metaBadges(listOf("${reportSampleItems().size} 条样本", reportScopeLabel(), "自动生成")), LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, 0)
         })
@@ -949,14 +950,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun renderNewsUpdateState(container: LinearLayout) {
         updateHeaderSummary()
-        val textValue = if (isNewsRefreshing) {
-            "正在抓取各平台热榜..."
-        } else {
-            "更新时间：${lastNewsUpdatedAtText.ifBlank { reportUpdatedAtText() }} UTC+8"
-        }
-        container.addView(softStatusRow(textValue, isNewsRefreshing), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(14))
-        })
+    }
+
+    private fun newsHeaderStatusText(): String = if (isNewsRefreshing) {
+        "正在抓取各平台热榜..."
+    } else {
+        "更新时间：${lastNewsUpdatedAtText.ifBlank { reportUpdatedAtText() }}"
+    }
+
+    private fun briefingHeaderStatusText(): String = if (isBriefingRefreshing) {
+        "正在按平台重新抽样并生成日报..."
+    } else {
+        "每个平台抽样 10 条 · ${reportUpdatedAtText()}"
     }
 
     private fun renderNewsList(container: LinearLayout) {
@@ -1378,7 +1383,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun reportSampleItems(): List<NewsItem> {
-        val base = visibleItems().ifEmpty { items }
+        val base = if (items.isNotEmpty()) items else visibleItems()
         if (base.isEmpty()) return emptyList()
         val grouped = base.groupBy { it.source.ifBlank { "未知来源" } }
         return grouped.values
@@ -2977,7 +2982,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         background = rounded(Color.argb(235, 255, 255, 255), 0, line, 1)
     }
 
-    private fun pageHeader(textValue: String, leading: View? = null, trailing: View? = null): View = LinearLayout(this).apply {
+    private fun pageHeader(
+        textValue: String,
+        leading: View? = null,
+        inlineStatus: String? = null,
+        inlineStatusLoading: Boolean = false,
+        trailing: View? = null
+    ): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(44)
@@ -2986,12 +2997,47 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setMargins(0, 0, dp(12), 0)
             })
         }
-        addView(pageTitle(textValue), LinearLayout.LayoutParams(0, -2, 1f))
+        addView(pageTitle(textValue), LinearLayout.LayoutParams(-2, -2))
+        inlineStatus?.takeIf { it.isNotBlank() }?.let { statusText ->
+            addView(inlineStatusView(statusText, inlineStatusLoading), LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                setMargins(dp(12), 0, 0, 0)
+            })
+        } ?: addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
         trailing?.let {
             addView(it, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
                 setMargins(dp(12), 0, 0, 0)
             })
         }
+    }
+
+    private fun inlineStatusView(textValue: String, loading: Boolean = false): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(10), 0, dp(10), 0)
+        background = rounded(Color.TRANSPARENT, 14)
+        if (loading) {
+            addView(ProgressBar(context).apply {
+                isIndeterminate = true
+                indeterminateTintList = ColorStateList.valueOf(redDeep)
+            }, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                setMargins(0, 0, dp(8), 0)
+            })
+        } else {
+            addView(View(context).apply {
+                background = rounded(jade, 999)
+            }, LinearLayout.LayoutParams(dp(8), dp(8)).apply {
+                setMargins(0, 0, dp(8), 0)
+            })
+        }
+        addView(TextView(context).apply {
+            text = textValue
+            setTextColor(if (loading) inkSoft else muted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = if (loading) serifBold else condensedBold
+            includeFontPadding = false
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(0, -2, 1f))
     }
 
     private fun softStatusRow(textValue: String, loading: Boolean = false): View = LinearLayout(this).apply {
