@@ -182,7 +182,6 @@ private val topicStopWords = setOf(
     "央视", "央视网", "中国日报", "china", "daily"
 )
 
-private const val NEWS_CACHE_LIMIT = 240
 private const val REPORT_ITEM_LIMIT = 80
 private const val LOG_TAG = "JuheHotNews"
 
@@ -228,6 +227,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var feedMode: String = "all"
     private var platformFilter: String = "all"
     private var scopeFilter: String = "all"
+    private var platformFilterScrollX: Int = 0
     private var playQueue: List<NewsItem> = emptyList()
     private var playQueueIndex: Int = 0
     private var isQueueSpeaking: Boolean = false
@@ -1006,6 +1006,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun renderPlatformFilter() {
         val platforms = platformOptions()
         if (platforms.size <= 1) return
+        val scrollView = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            setOnScrollChangeListener { _, scrollX, _, _, _ ->
+                platformFilterScrollX = scrollX
+            }
+        }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(1), 0, dp(1), dp(10))
@@ -1015,6 +1021,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val label = if (platform == "all") "全部平台" else platform
             val count = if (platform == "all") items.size else items.count { it.source.ifBlank { "未知平台" } == platform }
             row.addView(chipView("$label $count", active) {
+                platformFilterScrollX = scrollView.scrollX
                 platformFilter = platform
                 store.savePlatformFilter(platformFilter)
                 selected = null
@@ -1023,10 +1030,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setMargins(0, 0, dp(7), 0)
             })
         }
-        content.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(row)
-        }, LinearLayout.LayoutParams(-1, -2))
+        scrollView.addView(row)
+        content.addView(scrollView, LinearLayout.LayoutParams(-1, -2))
+        scrollView.post {
+            scrollView.scrollTo(platformFilterScrollX, 0)
+        }
     }
 
     private fun scopeOptions(): List<String> {
@@ -1414,7 +1422,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     }
                     return@onSuccess
                 }
-                items = mergeLocalState(fetched.distinctBy { it.id }.sortedByDescending { it.publishedAt }).take(NEWS_CACHE_LIMIT)
+                items = mergeLocalState(fetched.distinctBy { it.id }.sortedByDescending { it.publishedAt })
                 store.saveNewsCache(items)
                 keepSelectedIfVisible()
                 lastNewsUpdatedAtText = reportUpdatedAtText()
@@ -3611,7 +3619,7 @@ class AppStore(context: Context) {
 
     fun saveNewsCache(items: List<NewsItem>) {
         val arr = JSONArray()
-        items.take(NEWS_CACHE_LIMIT).forEach {
+        items.forEach {
             arr.put(JSONObject().apply {
                 put("id", it.id)
                 put("title", it.title)
@@ -3915,7 +3923,7 @@ class NewsRepository {
                 )
             }
         }
-        return items.distinctBy { it.id }.take(300)
+        return items.distinctBy { it.id }
     }
 
     private fun normalizeMomoyuLink(link: String): String = when {
