@@ -139,22 +139,6 @@ private enum class ApiAuthMode {
     API_KEY
 }
 
-data class HotTopic(
-    val title: String,
-    val keywords: List<String>,
-    val items: List<NewsItem>
-) {
-    val sourceCount: Int get() = items.map { it.source }.distinct().size
-    val score: Int get() = items.size * 10 + sourceCount * 6
-}
-
-data class DailyReportArchive(
-    val id: String,
-    val title: String,
-    val createdAt: String,
-    val content: String
-)
-
 data class SourceDiagnostic(
     val sourceId: String,
     val sourceName: String,
@@ -174,12 +158,6 @@ private data class DialogActionItem(
 data class FetchResult(
     val items: List<NewsItem>,
     val diagnostics: List<SourceDiagnostic>
-)
-
-private val topicStopWords = setOf(
-    "中国", "新闻", "报道", "记者", "表示", "发布", "举行", "进行", "今天", "今年",
-    "一个", "一种", "一场", "这个", "这些", "相关", "工作", "发展", "推进", "持续",
-    "央视", "央视网", "中国日报", "china", "daily"
 )
 
 private const val LOG_TAG = "JuheHotNews"
@@ -224,7 +202,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var isNewsDetailOpen: Boolean = false
     private var pendingNewsListScrollY: Int? = null
     private var isNewsRefreshing: Boolean = false
-    private var isBriefingRefreshing: Boolean = false
     private var lastNewsUpdatedAtText: String = ""
     private var keywordFilter: String = ""
     private var feedMode: String = "all"
@@ -428,7 +405,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar.orientation = LinearLayout.HORIZONTAL
         listOf(
             "news" to "新闻",
-            "briefing" to "简报",
             "settings" to "设置"
         ).forEach { (id, label) ->
                 val active = activeTab == id || (activeTab in setOf("sources", "ai_settings", "voice_settings") && id == "settings")
@@ -459,7 +435,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         renderTabs()
                         when (id) {
                             "news" -> showNews()
-                            "briefing" -> showBriefing()
                             else -> showSettings()
                         }
                     }
@@ -511,216 +486,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         content.addView(feed)
     }
 
-    private fun showHotTopics() {
-        activeTab = "hot"
-        isNewsDetailOpen = false
-        swipeRefresh.isEnabled = false
-        tabBar.visibility = View.VISIBLE
-        content.removeAllViews()
-        renderTabs()
-        headerArea.removeAllViews()
-        content.setPadding(dp(14), 0, dp(14), dp(20))
-        val topics = hotTopics()
-        headerArea.addView(hotTools(topics))
-        if (items.isEmpty()) {
-            content.addView(note("暂无新闻。点击“刷新”后可自动聚合热点话题。"))
-            return
-        }
-        if (topics.isEmpty()) {
-            content.addView(note("当前列表暂未形成可聚合热点，换个筛选词或刷新后再看。"))
-            return
-        }
-        topics.forEachIndexed { index, topic ->
-            content.addView(topicCard(topic, index + 1))
-        }
-    }
-
-    private fun showBriefing() {
-        activeTab = "briefing"
-        isNewsDetailOpen = false
-        swipeRefresh.isEnabled = false
-        tabBar.visibility = View.VISIBLE
-        content.removeAllViews()
-        renderTabs()
-        headerArea.removeAllViews()
-        content.setPadding(dp(14), 0, dp(14), dp(20))
-        val pinned = fixedHeaderShell()
-        pinned.addView(pageHeader(
-            textValue = "今日日报",
-            inlineStatus = briefingHeaderStatusText(),
-            inlineStatusLoading = isBriefingRefreshing,
-            trailing = roundIconButton(if (isBriefingRefreshing) "更新中" else "更新", "refresh") {
-            if (isBriefingRefreshing) {
-                toast("正在更新简报")
-                return@roundIconButton
-            }
-            isBriefingRefreshing = true
-            status.text = "正在重新聚合今日日报..."
-            showBriefing()
-            refreshNews()
-        }), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(12))
-        })
-        val dailyReport = dailyReportText()
-        pinned.addView(reportCardHeader(dailyReport))
-        headerArea.addView(pinned)
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, 0)
-        }
-        body.addView(reportCardBody(dailyReport))
-        content.addView(body)
-    }
-
-    private fun hotTools(topics: List<HotTopic>): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(13), 0, dp(13), 0)
-            background = rounded(statusFill, 14, line, 1)
-            addView(StrokeIconView(context, "pulse", muted), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
-                setMargins(0, 0, dp(10), 0)
-            })
-            addView(TextView(context).apply {
-                text = "热点聚合基于当前筛选池"
-                setTextColor(muted)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-                typeface = condensedBold
-                setSingleLine(true)
-                ellipsize = TextUtils.TruncateAt.END
-                includeFontPadding = false
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        }, LinearLayout.LayoutParams(0, dp(44), 1f))
-        addView(roundIconButton("分享热点", "share") {
-            shareText(hotTopicsText(topics), "分享热点摘要")
-        }, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
-            setMargins(dp(10), 0, 0, 0)
-        })
-    }.also {
-        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(12))
-        }
-    }
-
-    private fun topicCard(topic: HotTopic, rank: Int): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(panel, 18, line, 1)
-        elevation = 0f
-        isClickable = true
-        isFocusable = true
-        contentDescription = "热点话题 ${topic.title}"
-        addClickFeedback(24)
-        setOnClickListener { showTopicActions(topic, rank) }
-        val head = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        head.addView(TextView(context).apply {
-            text = topic.title
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            typeface = serifBold
-            setLineSpacing(0f, 1.04f)
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-            includeFontPadding = false
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(FrameLayout(context).apply {
-            addView(View(context).apply {
-                background = rounded(Color.argb(32, 18, 16, 13), 17)
-            }, FrameLayout.LayoutParams(dp(54), dp(54)).apply {
-                leftMargin = dp(4)
-                topMargin = dp(4)
-            })
-            addView(TextView(context).apply {
-                text = topic.score.toString()
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-                typeface = condensedBold
-                includeFontPadding = false
-                background = rounded(heatColor(rank), 17)
-            }, FrameLayout.LayoutParams(dp(54), dp(54)))
-        }, LinearLayout.LayoutParams(dp(58), dp(58)).apply {
-            setMargins(dp(12), 0, 0, 0)
-        })
-        addView(head)
-        topic.items.take(3).forEach { item ->
-            addView(TextView(context).apply {
-                text = "• ${item.title}"
-                setTextColor(inkSoft)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-                typeface = serif
-                setSingleLine(true)
-                ellipsize = TextUtils.TruncateAt.END
-                setPadding(dp(2), dp(10), 0, 0)
-                includeFontPadding = false
-            })
-        }
-    }.also {
-        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(12))
-        }
-    }
-
-    private fun heatColor(rank: Int): Int = when (rank) {
-        1 -> red
-        2 -> jade
-        3 -> cobalt
-        else -> gold
-    }
-
-    private fun showTopicActions(topic: HotTopic, rank: Int) {
-        val representative = topic.items.firstOrNull()
-        styledActionDialog(
-            title = topic.title,
-            items = listOf(
-                DialogActionItem("查看代表稿", "briefing") {
-                    representative?.let {
-                        selected = updateItemState(it.id, read = true)
-                        lastCritique = ""
-                        selected?.let { current -> showNewsDetail(current) }
-                    } ?: toast("暂无代表稿")
-                },
-                DialogActionItem("播报代表稿", "speaker") {
-                    representative?.let {
-                        selected = updateItemState(it.id, read = true)
-                        speakSelected()
-                    } ?: toast("暂无代表稿")
-                },
-                DialogActionItem("复制话题", "save") {
-                    copyText("hot_topic", hotTopicText(topic, rank), "话题摘要已复制")
-                },
-                DialogActionItem("分享话题", "share") {
-                    shareText(hotTopicText(topic, rank), "分享话题摘要")
-                }
-            )
-        ).show()
-    }
-
-    private fun reportCardHeader(report: String): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(0), 0, dp(0), 0)
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { showReportActions(report) }
-        if (isBriefingRefreshing) {
-            addView(briefingRefreshProgress(), LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, 0, 0, dp(10))
-            })
-        }
-        addView(metaBadges(listOf("${reportSampleItems().size} 条样本", reportScopeLabel(), "自动生成")), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, 0)
-        })
-    }.also {
-        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(12))
-        }
-    }
-
     private fun metaBadges(values: List<String>): View = HorizontalScrollView(this).apply {
         isHorizontalScrollBarEnabled = false
         addView(LinearLayout(context).apply {
@@ -739,89 +504,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 })
             }
         })
-    }
-
-    private fun briefingRefreshProgress(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = rounded(statusFill, 14, line, 1)
-        addView(ProgressBar(context).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(redDeep)
-        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
-            setMargins(0, 0, dp(10), 0)
-        })
-        addView(TextView(context).apply {
-            text = "正在抓取来源并重新生成日报..."
-            setTextColor(inkSoft)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = serifBold
-            includeFontPadding = false
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-    }
-
-    private fun reportScopeLabel(): String = when {
-        scopeFilter != "all" -> "$scopeFilter 范围"
-        else -> "全部范围"
-    }
-
-    private fun reportCardBody(report: String): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(panel, 18, line, 1)
-        elevation = 0f
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(View(context).apply {
-                background = rounded(red, 999)
-            }, LinearLayout.LayoutParams(dp(4), -1).apply {
-                setMargins(0, 0, dp(12), 0)
-            })
-            addView(TextView(context).apply {
-                text = report
-                contentDescription = "新闻日报内容"
-                setTextColor(inkSoft)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                typeface = serif
-                setLineSpacing(0f, 1.34f)
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        })
-        val actions = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(13), 0, 0)
-        }
-        actions.addView(iconPillButton("复制日报", "briefing") { copyText("daily_report", report, "日报已复制") }, pillWrapParams())
-        actions.addView(iconPillButton("播报日报", "speaker", ghost = true) { speakText(report, "今日日报") }, pillWrapParams(0))
-        addView(actions)
-    }.also {
-        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(12))
-        }
-    }
-
-    private fun showReportActions(report: String) {
-        val briefing = briefingText()
-        styledActionDialog(
-            title = "聚合热闻今日日报",
-            items = listOf(
-                DialogActionItem("分享日报", "share") {
-                    shareText(report, "分享新闻日报")
-                },
-                DialogActionItem("复制简报", "briefing") {
-                    copyText("briefing", briefing, "简报已复制")
-                },
-                DialogActionItem("播报简报", "speaker") {
-                    speakText(briefing, "简报")
-                },
-                DialogActionItem("连续播报", "bolt") {
-                    speakQueue()
-                },
-                DialogActionItem("停止播报", "close", redDeep) {
-                    stopSpeaking()
-                }
-            )
-        ).show()
     }
 
     private fun renderFilter(container: LinearLayout) {
@@ -942,7 +624,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showReadableTab() {
         when (activeTab) {
-            "briefing" -> showBriefing()
             "news" -> showCurrentNewsSurface()
             else -> showNews()
         }
@@ -955,13 +636,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun newsHeaderStatusText(): String = if (isNewsRefreshing) {
         "正在抓取各平台热榜..."
     } else {
-        "更新时间：${lastNewsUpdatedAtText.ifBlank { reportUpdatedAtText() }}"
-    }
-
-    private fun briefingHeaderStatusText(): String = if (isBriefingRefreshing) {
-        "正在按平台重新抽样并生成日报..."
-    } else {
-        "每个平台抽样 10 条 · ${reportUpdatedAtText()}"
+        "更新时间：${lastNewsUpdatedAtText.ifBlank { currentChinaTimeText() }}"
     }
 
     private fun renderNewsList(container: LinearLayout) {
@@ -1148,7 +823,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun renderNewsBodyCard(item: NewsItem) {
         content.addView(leadCard {
-            addView(detailSectionTitle("新闻正文", "briefing"))
+            addView(detailSectionTitle("新闻正文", "save"))
             addView(TextView(context).apply {
                 text = item.summary.ifBlank { item.script }
                 setTextColor(inkSoft)
@@ -1161,7 +836,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, dp(16), 0, 0)
             }
-            actions.addView(iconPillButton("复制", "briefing", ghost = true) { copySelected() }, pillWrapParams())
+            actions.addView(iconPillButton("复制", "save", ghost = true) { copySelected() }, pillWrapParams())
             actions.addView(iconPillButton("分享", "share", ghost = true) { shareSelected() }, pillWrapParams())
             actions.addView(iconPillButton("原文", "search", ghost = true) { openOriginal(item) }, pillWrapParams(0))
             addView(HorizontalScrollView(context).apply {
@@ -1187,7 +862,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setPadding(0, dp(16), 0, 0)
             }
             actions.addView(iconPillButton(if (lastCritique.isBlank()) "生成锐评" else "重新生成", "edit") { critiqueSelected() }, pillWrapParams())
-            actions.addView(iconPillButton("复制", "briefing", ghost = true) {
+            actions.addView(iconPillButton("复制", "save", ghost = true) {
                 copyText("news_critique", lastCritique, "锐评已复制")
             }, pillWrapParams(0))
             addView(actions)
@@ -1262,11 +937,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }.onSuccess { result ->
                 swipeRefresh.isRefreshing = false
                 isNewsRefreshing = false
-                isBriefingRefreshing = false
                 store.saveSourceDiagnostics(result.diagnostics)
                 val fetched = result.items
                 if (fetched.isEmpty()) {
-                    lastNewsUpdatedAtText = reportUpdatedAtText()
+                    lastNewsUpdatedAtText = currentChinaTimeText()
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
                         items = cached
@@ -1277,7 +951,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         status.text = "本次未抓到新闻；可在范围页查看来源诊断"
                     }
                     when (activeTab) {
-                        "briefing" -> showBriefing()
                         "sources" -> showSources()
                         "news" -> showCurrentNewsSurface()
                     }
@@ -1286,20 +959,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 items = mergeLocalState(fetched.distinctBy { it.id }.sortedByDescending { it.publishedAt })
                 store.saveNewsCache(items)
                 keepSelectedIfVisible()
-                lastNewsUpdatedAtText = reportUpdatedAtText()
+                lastNewsUpdatedAtText = currentChinaTimeText()
                 val okCount = result.diagnostics.count { it.success }
                 val failCount = result.diagnostics.count { !it.success }
                 status.text = "已汇总 ${items.size} 条，来源成功 $okCount 个、失败 $failCount 个；前台每 10 分钟自动更新"
                 updateHeaderSummary()
                 when (activeTab) {
-                    "briefing" -> showBriefing()
                     "sources" -> showSources()
                     "news" -> showCurrentNewsSurface()
                 }
             }.onFailure {
                 swipeRefresh.isRefreshing = false
                 isNewsRefreshing = false
-                isBriefingRefreshing = false
                 if (!silent) {
                     val cached = store.cachedNews()
                     if (cached.isNotEmpty()) {
@@ -1312,7 +983,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     }
                     updateHeaderSummary()
                     when (activeTab) {
-                        "briefing" -> showBriefing()
                         "sources" -> showSources()
                         "news" -> showCurrentNewsSurface()
                     }
@@ -1365,7 +1035,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun reportUpdatedAtText(): String {
+    private fun currentChinaTimeText(): String {
         val calendar = java.util.Calendar.getInstance(TimeZone.getTimeZone("GMT+08:00"), Locale.CHINA)
         val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).apply {
             timeZone = TimeZone.getTimeZone("GMT+08:00")
@@ -1380,171 +1050,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             else -> "星期日"
         }
         return "$time  $weekday"
-    }
-
-    private fun reportSampleItems(): List<NewsItem> {
-        val base = if (items.isNotEmpty()) items else visibleItems()
-        if (base.isEmpty()) return emptyList()
-        val grouped = base.groupBy { it.source.ifBlank { "未知来源" } }
-        return grouped.values
-            .sortedByDescending { it.size }
-            .flatMap { group -> group.take(10) }
-    }
-
-    private fun briefingText(): String {
-        val list = reportSampleItems()
-        if (list.isEmpty()) {
-            return "暂无可生成简报的新闻。请先刷新，或检查抓取范围是否启用。"
-        }
-        val scopes = list.groupingBy { it.scope.ifBlank { "综合" } }.eachCount()
-            .entries.sortedByDescending { it.value }
-            .joinToString("，") { "${it.key}${it.value}条" }
-        val sources = list.groupingBy { it.source.ifBlank { "未知来源" } }.eachCount()
-            .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-            .take(4)
-            .joinToString("，") { "${it.key}${it.value}条" }
-        val newest = reportUpdatedAtText()
-        val headlines = list.take(12).mapIndexed { index, item ->
-            "${index + 1}. ${item.title}（${item.source} / ${item.scope.ifBlank { "综合" }}）"
-        }.joinToString("\n")
-        return buildString {
-            appendLine("聚合热闻简报")
-            appendLine("更新时间：$newest")
-            appendLine("汇总规模：${list.size} 条；范围分布：$scopes；主要来源：$sources。")
-            appendLine()
-            appendLine("重点新闻：")
-            append(headlines)
-            appendLine()
-            appendLine()
-            append("提示：简报基于当前列表、筛选词和抓取范围自动生成。需要深度观点时，可进入新闻详情调用大模型锐评。")
-        }
-    }
-
-    private fun dailyReportText(): String {
-        val list = reportSampleItems()
-        if (list.isEmpty()) {
-            return "暂无可生成日报的新闻。请先刷新，或检查抓取范围是否启用。"
-        }
-        val topics = hotTopics().take(5)
-        val newest = reportUpdatedAtText()
-        val scopes = list.groupingBy { it.scope.ifBlank { "综合" } }.eachCount()
-            .entries.sortedByDescending { it.value }
-            .joinToString("，") { "${it.key}${it.value}条" }
-        val sources = list.groupingBy { it.source.ifBlank { "未知来源" } }.eachCount()
-            .entries.sortedByDescending { it.value }
-            .take(5)
-            .joinToString("，") { "${it.key}${it.value}条" }
-        val focusItems = list.take(8)
-        val watchItems = list.drop(8).take(4)
-        return buildString {
-            appendLine("聚合热闻今日日报")
-            appendLine("更新时间：$newest")
-            appendLine("样本范围：${list.size} 条新闻；范围分布：$scopes；主要来源：$sources。")
-            appendLine()
-            appendLine("一、今日概览")
-            appendLine("当前新闻池以${scopes.ifBlank { "综合" }}为主，建议优先关注多来源重复出现的话题，以及发布时间较新的连续更新。")
-            appendLine()
-            appendLine("二、热点话题")
-            if (topics.isEmpty()) {
-                appendLine("暂无明显聚合热点，当前更适合按单条新闻浏览。")
-            } else {
-                topics.forEachIndexed { index, topic ->
-                    appendLine("${index + 1}. ${topic.title}：${topic.items.size} 条报道，${topic.sourceCount} 个来源，热度 ${topic.score}。")
-                }
-            }
-            appendLine()
-            appendLine("三、重点新闻")
-            focusItems.forEachIndexed { index, item ->
-                appendLine("${index + 1}. ${item.title}（${item.source} / ${item.scope.ifBlank { "综合" }}）")
-                item.summary.takeIf { it.isNotBlank() }?.let {
-                    appendLine("   摘要：${it.take(90)}${if (it.length > 90) "..." else ""}")
-                }
-            }
-            appendLine()
-            appendLine("四、稍后关注")
-            if (watchItems.isEmpty()) {
-                appendLine("暂无更多延伸条目，可等待下一轮刷新。")
-            } else {
-                watchItems.forEachIndexed { index, item ->
-                    appendLine("${index + 1}. ${item.title}（${item.source}）")
-                    item.summary.takeIf { it.isNotBlank() }?.let {
-                        appendLine("   观察点：${it.take(72)}${if (it.length > 72) "..." else ""}")
-                    }
-                }
-            }
-            appendLine()
-            append("说明：本日报由端侧规则基于当前筛选、抓取范围和热点聚合结果生成，不替代媒体原文与人工研判。")
-        }.trim()
-    }
-
-    private fun hotTopics(): List<HotTopic> {
-        val list = reportSampleItems()
-        if (list.isEmpty()) return emptyList()
-        val buckets = linkedMapOf<String, MutableList<NewsItem>>()
-        list.forEach { item ->
-            val key = topicKey(item.title)
-            if (key.isNotBlank()) buckets.getOrPut(key) { mutableListOf() }.add(item)
-        }
-        val topics = buckets.values
-            .mapNotNull { bucket ->
-                val keywords = topicKeywords(bucket)
-                val title = keywords.take(3).joinToString(" / ").ifBlank { bucket.first().title.take(24) }
-                HotTopic(title = title, keywords = keywords, items = bucket)
-            }
-            .sortedWith(compareByDescending<HotTopic> { it.score }.thenByDescending { it.items.size })
-        val multiItemTopics = topics.filter { it.items.size >= 2 || it.sourceCount >= 2 }
-        return (multiItemTopics.ifEmpty { topics }).take(10)
-    }
-
-    private fun topicKey(title: String): String {
-        return titleKeywords(title).take(3).joinToString("|")
-    }
-
-    private fun topicKeywords(items: List<NewsItem>): List<String> {
-        return items.flatMap { titleKeywords(it.title) }
-            .groupingBy { it }
-            .eachCount()
-            .entries
-            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.length })
-            .map { it.key }
-            .take(8)
-    }
-
-    private fun titleKeywords(title: String): List<String> {
-        val cleaned = title
-            .replace(Regex("[，。！？、：；（）()《》“”\"'\\[\\]【】|]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        val tokens = Regex("[\\u4e00-\\u9fa5]{2,}|[A-Za-z0-9]{2,}").findAll(cleaned)
-            .map { it.value.lowercase(Locale.ROOT) }
-            .flatMap { token ->
-                if (token.length in 2..6 || token.any { it in 'a'..'z' || it in '0'..'9' }) {
-                    listOf(token)
-                } else {
-                    token.windowed(4, 2, partialWindows = false)
-                }
-            }
-            .filterNot { it in topicStopWords }
-            .distinct()
-            .toList()
-        return tokens.ifEmpty { listOf(cleaned.take(8)) }.filter { it.isNotBlank() }
-    }
-
-    private fun hotTopicsText(topics: List<HotTopic>): String {
-        if (topics.isEmpty()) return "暂无可分享热点。"
-        return buildString {
-            appendLine("聚合热闻热点摘要")
-            topics.take(10).forEachIndexed { index, topic ->
-                appendLine(hotTopicText(topic, index + 1))
-                if (index != topics.lastIndex) appendLine()
-            }
-        }.trim()
-    }
-
-    private fun hotTopicText(topic: HotTopic, rank: Int): String {
-        val sources = topic.items.map { it.source }.distinct().take(5).joinToString("、")
-        val headlines = topic.items.take(3).joinToString("；") { it.title }
-        return "热点$rank：${topic.title}\n热度 ${topic.score}，${topic.items.size} 条报道，${topic.sourceCount} 个来源：$sources。\n代表标题：$headlines"
     }
 
     private fun mergeLocalState(fetched: List<NewsItem>): List<NewsItem> {
@@ -1728,7 +1233,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showActiveReadableTab() {
         when (activeTab) {
-            "briefing" -> showBriefing()
+            "news" -> showCurrentNewsSurface()
         }
     }
 
@@ -3351,7 +2856,6 @@ private class TabIconView(context: Context, private val icon: String, color: Int
         when (icon) {
             "news" -> drawNews(canvas)
             "hot" -> drawHot(canvas)
-            "briefing" -> drawBriefing(canvas)
             "sources" -> drawSources(canvas)
             else -> drawSettings(canvas)
         }
@@ -3382,14 +2886,6 @@ private class TabIconView(context: Context, private val icon: String, color: Int
             cubicTo(9f, 12.2f, 9.2f, 13.2f, 9.8f, 14f)
         }
         canvas.drawPath(path, stroke)
-    }
-
-    private fun drawBriefing(canvas: Canvas) {
-        box.set(6f, 3f, 18f, 21f)
-        canvas.drawRect(box, stroke)
-        canvas.drawLine(9f, 7f, 15f, 7f, stroke)
-        canvas.drawLine(9f, 11f, 15f, 11f, stroke)
-        canvas.drawLine(9f, 15f, 12.5f, 15f, stroke)
     }
 
     private fun drawSources(canvas: Canvas) {
@@ -3444,7 +2940,6 @@ private class StrokeIconView(context: Context, private val icon: String, color: 
             "speaker" -> drawSpeaker(canvas)
             "save" -> drawSave(canvas)
             "check" -> drawCheck(canvas)
-            "briefing" -> drawBriefing(canvas)
             "refresh" -> drawRefresh(canvas)
             "share" -> drawShare(canvas)
             "pulse" -> drawPulse(canvas)
@@ -3561,14 +3056,6 @@ private class StrokeIconView(context: Context, private val icon: String, color: 
         canvas.drawLine(8f, 21f, 8f, 14f, stroke)
         canvas.drawLine(16f, 21f, 16f, 14f, stroke)
         canvas.drawLine(8f, 14f, 16f, 14f, stroke)
-    }
-
-    private fun drawBriefing(canvas: Canvas) {
-        box.set(6f, 3f, 18f, 21f)
-        canvas.drawRect(box, stroke)
-        canvas.drawLine(9f, 7f, 15f, 7f, stroke)
-        canvas.drawLine(9f, 11f, 15f, 11f, stroke)
-        canvas.drawLine(9f, 15f, 12.5f, 15f, stroke)
     }
 
     private fun drawCheck(canvas: Canvas) {
@@ -3691,41 +3178,6 @@ class AppStore(context: Context) {
             })
         }
         prefs.edit().putString("news_cache", arr.toString()).apply()
-    }
-
-    fun dailyReportArchives(): List<DailyReportArchive> {
-        val arr = JSONArray(prefs.getString("daily_report_archives", "[]"))
-        return (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            DailyReportArchive(
-                id = o.optString("id"),
-                title = o.optString("title"),
-                createdAt = o.optString("createdAt"),
-                content = o.optString("content")
-            )
-        }
-    }
-
-    fun saveDailyReportArchive(archive: DailyReportArchive) {
-        val archives = (listOf(archive) + dailyReportArchives().filterNot { it.id == archive.id }).take(14)
-        saveDailyReportArchives(archives)
-    }
-
-    fun deleteDailyReportArchive(id: String) {
-        saveDailyReportArchives(dailyReportArchives().filterNot { it.id == id })
-    }
-
-    private fun saveDailyReportArchives(archives: List<DailyReportArchive>) {
-        val arr = JSONArray()
-        archives.take(14).forEach {
-            arr.put(JSONObject().apply {
-                put("id", it.id)
-                put("title", it.title)
-                put("createdAt", it.createdAt)
-                put("content", it.content)
-            })
-        }
-        prefs.edit().putString("daily_report_archives", arr.toString()).apply()
     }
 
     fun sourceDiagnostics(): List<SourceDiagnostic> {

@@ -17,7 +17,7 @@
 ## 2. 主要文件
 
 - `app/src/main/java/com/juhe/hotnews/MainActivity.kt`
-  - UI 壳层、新闻列表、热点、简报、详情、来源管理、设置页。
+  - UI 壳层、新闻列表、详情、来源管理、设置页。
   - `AppStore`：本地配置持久化。
   - `NewsRepository`：新闻源抓取与解析。
   - `AiClient`：锐评与远程语音接口。
@@ -30,7 +30,6 @@
 
 - `sources`：新闻源配置。
 - `news_cache`：最近 240 条新闻缓存。
-- `daily_report_archives`：最近 14 份日报归档。
 - `source_diagnostics`：最近一次来源刷新/测试诊断结果。
 - `keyword_filter`：最近一次关键词筛选。
 - `feed_mode`：新闻列表视图模式，支持 `all`、`favorite`、`unread`。
@@ -81,21 +80,6 @@
 - `read`：本地已读状态。
 - `script`：用于展示、锐评和播报的新闻稿文本。
 
-`HotTopic`
-
-- `title`：由高频关键词拼出的热点标题。
-- `keywords`：话题关键词。
-- `items`：归入该热点的新闻列表。
-- `sourceCount`：不同来源数量。
-- `score`：端侧热度分，当前为报道条数和来源数的加权结果。
-
-`DailyReportArchive`
-
-- `id`：归档唯一标识。
-- `title`：归档标题，当前为“日报 + 保存时间”。
-- `createdAt`：保存时间。
-- `content`：日报正文。
-
 `SourceDiagnostic`
 
 - `sourceId`：来源 ID。
@@ -112,8 +96,9 @@
 
 ## 4. 新闻抓取
 
-当前支持八类解析器：
+当前支持九类解析器：
 
+- `momoyu_hot`：解析摸摸鱼聚合热榜 JSON，读取返回的多个平台分区，将分区名称作为 `NewsItem.source`，用于首页平台分类。
 - `cctv_jsonp`：解析央视网 JSONP，读取 `data.list` 中的 `title`、`brief`、`url`、`focus_date`。
 - `rss`：解析 RSS/Atom 中的 `item` 或 `entry`，读取 `title`、`link`、`description/summary`、`pubDate/published/updated`。
 - `baidu_hot`：解析百度热搜页面注入的 `s-data` JSON，兼容桌面端 `hotList` 与移动端 `tabTextList` 结构，读取 `word/query`、`desc`、`url/rawUrl`、`hotScore`。
@@ -125,9 +110,9 @@
 
 默认来源模板版本：
 
-- `source_template_version = 3`。
-- 新安装会直接写入最新默认来源。
-- 旧安装首次启动时会补齐新增默认热榜/公开热门站点源；补齐后写入模板版本，避免用户后续手动删除某个默认源后又被每次启动自动加回。
+- `source_template_version = 5`。
+- 新安装会直接写入摸摸鱼聚合热榜默认来源。
+- 旧安装首次启动时会移除历史默认源并写入最新默认来源；用户自定义来源保留。
 
 刷新机制：
 
@@ -146,46 +131,22 @@
 
 - 关键词筛选：在端侧对 `title`、`summary`、`source`、`scope` 做包含匹配。
 - 全部/收藏/未读：在端侧基于 `favorite` 与 `read` 做列表过滤。
+- 平台筛选：`renderPlatformFilter()` 从当前新闻的 `source` 字段收集平台名称，写入 `platform_filter` 后由 `visibleItems()` 统一过滤。
 - 范围筛选：`renderScopeFilter()` 从当前新闻和来源配置中收集范围标签，写入 `scope_filter` 后由 `visibleItems()` 统一过滤。
 - 可见批量操作：`renderVisibleBatchActions()` 基于 `visibleItems()` 展示当前可见统计，并调用 `updateVisibleReadState()` 批量写回 `read` 状态。
 - 收藏/已读状态：随 `news_cache` 一起保存，刷新时按新闻 `id` 合并。
 - 复制：使用 Android `ClipboardManager`。
 - 分享：使用 `Intent.ACTION_SEND` 和系统分享面板。
 - 打开原文：使用 `Intent.ACTION_VIEW` 打开 `NewsItem.url`。
-- 热点聚合：基于 `visibleItems()` 的标题关键词做端侧聚类，并按热度分排序。
-- 自动简报：基于 `visibleItems()` 生成端侧文字稿，包含数量、范围分布、主要来源和重点标题。
-- 今日日报：复用 `visibleItems()` 与 `hotTopics()` 生成结构化日报稿，包含概览、热点、重点新闻和稍后关注。
 - 标题清单：`visibleHeadlinesText()` 将当前可见结果格式化为可复制文本，最多列出前 80 条并提示剩余数量。
 
-## 4.2 热点聚合
-
-当前热点聚合为轻量端侧实现：
-
-- 对标题做标点清洗，抽取中文、英文、数字关键词。
-- 过滤通用停用词，如“新闻”“报道”“发布”等。
-- 对较长中文词做滑窗切分，降低标题句式差异导致的漏聚类。
-- 使用前 3 个关键词作为话题桶 key。
-- 热度分计算为 `报道条数 * 10 + 不同来源数 * 6`。
-- 优先展示多报道或多来源话题；若当前新闻较少，则回退展示单条话题，避免空页面。
-
-## 4.3 简报与日报生成
-
-- `briefingText()` 生成短简报，适合快速复制和播报。
-- `dailyReportText()` 生成较完整的日报稿。
-- 日报会读取当前筛选、收藏/未读视图下的新闻池，并复用热点聚合结果。
-- 日报和简报同时读取范围标签筛选后的 `visibleItems()`，保证阅读、汇总和播报口径一致。
-- 日报固定输出四段：今日概览、热点话题、重点新闻、稍后关注。
-- 日报为端侧规则生成，不调用大模型，保证无 API Key 时也可用。
-- 日报归档调用 `AppStore.saveDailyReportArchive()` 写入 SharedPreferences，最多保留最近 14 份。
-- 归档列表在简报页渲染，支持复制、分享、播报和删除；删除调用 `AppStore.deleteDailyReportArchive()`。
-
-## 4.4 来源配置校验
+## 4.2 来源配置校验
 
 保存自定义来源时执行：
 
 - URL 非空。
 - URL 以 `http://` 或 `https://` 开头。
-- 类型必须为 `rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash` 之一。
+- 类型必须为 `momoyu_hot`、`rss`、`cctv_jsonp`、`baidu_hot`、`toutiao_hot`、`kr36_flash`、`thepaper_hot`、`v2ex_hot`、`sspai_home` 之一。
 - URL 不与已有来源重复。
 - 单源测试：调用 `NewsRepository.fetch(listOf(source))`，在状态栏展示抓取数量或错误。
 - 恢复默认：调用 `AppStore.resetDefaultSources()` 覆盖来源配置为内置默认值。
@@ -272,7 +233,7 @@ Xiaomi MiMo TTS：
 - `testVoiceSettings()` 读取当前表单配置，不要求先保存。
 - 远程模式自检前校验 Endpoint、Model 和 Voice；API Key 缺失或远程请求失败时自动回退 Android 本地 TTS。
 - 自检调用 `AiClient.speech()` 生成短测试音频，并复用 `playAudio()` 播放。
-- 单条新闻、日报和远程语音自检都遵循同一回退策略，避免远程 TTS 不可用时阻断播报。
+- 单条新闻和远程语音自检都遵循同一回退策略，避免远程 TTS 不可用时阻断播报。
 
 ## 7. 安全与生产化建议
 
