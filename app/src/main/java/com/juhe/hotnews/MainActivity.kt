@@ -182,7 +182,6 @@ private val topicStopWords = setOf(
     "央视", "央视网", "中国日报", "china", "daily"
 )
 
-private const val REPORT_ITEM_LIMIT = 80
 private const val LOG_TAG = "JuheHotNews"
 
 class MainActivity : Activity(), TextToSpeech.OnInitListener {
@@ -209,6 +208,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var root: LinearLayout
     private lateinit var tabBar: LinearLayout
     private lateinit var content: LinearLayout
+    private lateinit var headerArea: LinearLayout
     private lateinit var status: TextView
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var scrollView: ScrollView
@@ -366,10 +366,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setSingleLine(true)
             visibility = View.GONE
         }
+        headerArea = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
         scrollView = ScrollView(this)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(20))
+            setPadding(dp(14), 0, dp(14), dp(20))
         }
         scrollView.addView(content)
         swipeRefresh = SwipeRefreshLayout(this).apply {
@@ -383,7 +386,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     isRefreshing = false
                 }
             }
-            addView(scrollView)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(headerArea, LinearLayout.LayoutParams(-1, -2))
+                addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
+            })
         }
         root.addView(swipeRefresh, LinearLayout.LayoutParams(-1, 0, 1f))
         tabBar = LinearLayout(this).apply {
@@ -472,12 +479,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         content.removeAllViews()
         renderTabs()
-        content.setPadding(dp(14), dp(14), dp(14), dp(20))
-        renderFilter()
-        renderPlatformFilter()
-        renderScopeFilter()
-        renderNewsUpdateState()
-        renderNewsList()
+        headerArea.removeAllViews()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
+        val pinned = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(10))
+        }
+        renderFilter(pinned)
+        renderPlatformFilter(pinned)
+        renderNewsUpdateState(pinned)
+        headerArea.removeAllViews()
+        headerArea.addView(pinned)
+        val feed = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, 0)
+        }
+        renderNewsList(feed)
+        content.addView(feed)
     }
 
     private fun showHotTopics() {
@@ -487,9 +505,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
-        content.setPadding(dp(14), dp(14), dp(14), dp(20))
+        headerArea.removeAllViews()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
         val topics = hotTopics()
-        content.addView(hotTools(topics))
+        headerArea.addView(hotTools(topics))
         if (items.isEmpty()) {
             content.addView(note("暂无新闻。点击“刷新”后可自动聚合热点话题。"))
             return
@@ -510,10 +529,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
-        content.setPadding(dp(14), dp(14), dp(14), dp(20))
+        headerArea.removeAllViews()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
+        val pinned = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(10))
+        }
         val dailyReport = dailyReportText()
-        content.addView(reportCard(dailyReport))
-        renderDailyArchives()
+        pinned.addView(reportCardHeader(dailyReport))
+        headerArea.addView(pinned)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, 0)
+        }
+        body.addView(reportCardBody(dailyReport))
+        content.addView(body)
     }
 
     private fun hotTools(topics: List<HotTopic>): View = LinearLayout(this).apply {
@@ -645,7 +675,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         ).show()
     }
 
-    private fun reportCard(report: String): View = LinearLayout(this).apply {
+    private fun reportCardHeader(report: String): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
         background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
@@ -682,7 +712,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setMargins(0, dp(12), 0, 0)
             })
         }
-        addView(metaBadges(listOf("${visibleItems().ifEmpty { items }.take(REPORT_ITEM_LIMIT).size} 条样本", reportScopeLabel(), "自动生成")), LinearLayout.LayoutParams(-1, -2).apply {
+        addView(metaBadges(listOf("${reportSampleItems().size} 条样本", reportScopeLabel(), "自动生成")), LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, dp(10), 0, dp(10))
         })
         addView(LinearLayout(context).apply {
@@ -759,6 +789,40 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         else -> "全部范围"
     }
 
+    private fun reportCardBody(report: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
+        elevation = dp(2).toFloat()
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(View(context).apply {
+                background = rounded(red, 999)
+            }, LinearLayout.LayoutParams(dp(4), -1).apply {
+                setMargins(0, 0, dp(12), 0)
+            })
+            addView(TextView(context).apply {
+                text = report
+                contentDescription = "新闻日报内容"
+                setTextColor(inkSoft)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = serif
+                setLineSpacing(0f, 1.34f)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        })
+        val actions = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(13), 0, 0)
+        }
+        actions.addView(iconPillButton("复制日报", "briefing") { copyText("daily_report", report, "日报已复制") }, pillWrapParams())
+        actions.addView(iconPillButton("播报日报", "speaker", ghost = true) { speakText(report, "今日日报") }, pillWrapParams(0))
+        addView(actions)
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(12))
+        }
+    }
+
     private fun showReportActions(report: String) {
         val briefing = briefingText()
         styledActionDialog(
@@ -766,9 +830,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             items = listOf(
                 DialogActionItem("分享日报", "share") {
                     shareText(report, "分享新闻日报")
-                },
-                DialogActionItem("归档日报", "save") {
-                    archiveDailyReport(report)
                 },
                 DialogActionItem("复制简报", "briefing") {
                     copyText("briefing", briefing, "简报已复制")
@@ -786,142 +847,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         ).show()
     }
 
-    private fun archiveDailyReport(report: String) {
-        if (report.isBlank() || report.startsWith("暂无可生成日报")) {
-            toast("暂无可归档日报")
-            return
-        }
-        val createdAt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(java.util.Date())
-        val title = "日报 $createdAt"
-        store.saveDailyReportArchive(
-            DailyReportArchive(
-                id = UUID.randomUUID().toString(),
-                title = title,
-                createdAt = createdAt,
-                content = report
-            )
-        )
-        status.text = "已归档：$title"
-        showBriefing()
-    }
-
-    private fun renderDailyArchives() {
-        val archives = store.dailyReportArchives()
-        content.addView(archiveCard(archives))
-    }
-
-    private fun archiveCard(archives: List<DailyReportArchive>): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(15), dp(16), dp(15))
-        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
-        elevation = dp(2).toFloat()
-        addView(TextView(context).apply {
-            text = "日报归档"
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            typeface = serifBold
-            includeFontPadding = false
-        })
-        if (archives.isEmpty()) {
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                background = rounded(Color.rgb(255, 250, 242), 16, line, 1)
-                addView(TextView(context).apply {
-                    text = "暂无归档日报"
-                    setTextColor(inkSoft)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                    typeface = serifBold
-                    includeFontPadding = false
-                })
-                addView(TextView(context).apply {
-                    text = "点击今日日报操作区可保存当前日报稿。"
-                    setTextColor(muted)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-                    typeface = serif
-                    setLineSpacing(0f, 1.12f)
-                    setPadding(0, dp(6), 0, 0)
-                    includeFontPadding = false
-                })
-            }, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(12)
-            })
-            return@apply
-        }
-        archives.take(4).forEach { archive ->
-            addView(archiveRow(archive), LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, dp(12), 0, 0)
-            })
-        }
-    }.also {
-        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, 0, 0, dp(12))
-        }
-    }
-
-    private fun archiveRow(archive: DailyReportArchive): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(10), dp(10), dp(10))
-        background = rounded(Color.rgb(255, 250, 242), 14, line, 1)
-        val copy = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        copy.addView(TextView(context).apply {
-            text = archive.title
-            setTextColor(ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
-            typeface = serifBold
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
-            includeFontPadding = false
-        })
-        copy.addView(TextView(context).apply {
-            text = archiveSummary(archive)
-            setTextColor(muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            typeface = serif
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, dp(6), 0, 0)
-            includeFontPadding = false
-        })
-        addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(iconMiniButton("打开", "briefing") { showArchiveActions(archive) }, LinearLayout.LayoutParams(dp(88), dp(34)).apply {
-            setMargins(dp(10), 0, 0, 0)
-        })
-    }
-
-    private fun archiveSummary(archive: DailyReportArchive): String {
-        val lines = archive.content.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotBlank() && !it.startsWith("聚合热闻") && !it.startsWith("更新时间") && !it.startsWith("样本范围") }
-            .take(3)
-            .toList()
-        return lines.joinToString(" / ").ifBlank { "概览 / 热点 / 重点新闻 / 稍后关注" }
-    }
-
-    private fun showArchiveActions(archive: DailyReportArchive) {
-        styledActionDialog(
-            title = archive.title,
-            items = listOf(
-                DialogActionItem("复制", "briefing") {
-                    copyText("archived_daily_report", archive.content, "归档日报已复制")
-                },
-                DialogActionItem("分享", "share") {
-                    shareText(archive.content, "分享归档日报")
-                },
-                DialogActionItem("播报", "speaker") {
-                    speakText(archive.content, archive.title)
-                },
-                DialogActionItem("删除", "close", redDeep) {
-                    store.deleteDailyReportArchive(archive.id)
-                    status.text = "已删除归档：${archive.title}"
-                    showBriefing()
-                }
-            )
-        ).show()
-    }
-
-    private fun renderFilter() {
+    private fun renderFilter(container: LinearLayout) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 0, 0, dp(10))
@@ -975,35 +901,34 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             setMargins(dp(10), 0, 0, 0)
         })
-        content.addView(row)
+        container.addView(row)
     }
 
-    private fun renderScopeFilter() {
-        val scopes = scopeOptions()
-        if (scopes.size <= 1) return
+    private fun renderScopeFilter(container: LinearLayout) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(1), 0, dp(1), dp(12))
         }
+        val scopes = scopeOptions()
         scopes.forEach { scopeName ->
             val active = scopeFilter == scopeName
             val label = if (scopeName == "all") "全部范围" else scopeName
             row.addView(chipView(label, active) {
-                    scopeFilter = scopeName
-                    store.saveScopeFilter(scopeFilter)
-                    selected = null
-                    showReadableTab()
+                scopeFilter = scopeName
+                store.saveScopeFilter(scopeFilter)
+                selected = null
+                showReadableTab()
             }, LinearLayout.LayoutParams(-2, dp(34)).apply {
                 setMargins(0, 0, dp(7), 0)
             })
         }
-        content.addView(HorizontalScrollView(this).apply {
+        container.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(row)
         }, LinearLayout.LayoutParams(-1, -2))
     }
 
-    private fun renderPlatformFilter() {
+    private fun renderPlatformFilter(container: LinearLayout) {
         val platforms = platformOptions()
         if (platforms.size <= 1) return
         val scrollView = HorizontalScrollView(this).apply {
@@ -1031,7 +956,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             })
         }
         scrollView.addView(row)
-        content.addView(scrollView, LinearLayout.LayoutParams(-1, -2))
+        container.addView(scrollView, LinearLayout.LayoutParams(-1, -2))
         scrollView.post {
             scrollView.scrollTo(platformFilterScrollX, 0)
         }
@@ -1058,7 +983,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun renderNewsUpdateState() {
+    private fun renderNewsUpdateState(container: LinearLayout) {
         updateHeaderSummary()
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1091,15 +1016,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setSingleLine(true)
             ellipsize = TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        content.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+        container.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, 0, 0, dp(14))
         })
     }
 
-    private fun renderNewsList() {
+    private fun renderNewsList(container: LinearLayout) {
         val visible = visibleItems()
         if (items.isEmpty()) {
-            content.addView(note("暂无新闻。点击“刷新”从已启用范围抓取。"))
+            container.addView(note("暂无新闻。点击“刷新”从已启用范围抓取。"))
             return
         }
         if (visible.isEmpty()) {
@@ -1108,16 +1033,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 if (scopeFilter != "all") "范围“$scopeFilter”" else null,
                 if (keywordFilter.isNotBlank()) "关键词“$keywordFilter”" else null
             ).joinToString("、").ifBlank { "当前条件" }
-            content.addView(note("没有匹配$reason 的新闻，调整平台、范围或清空筛选后可查看其他稿件。"))
+            container.addView(note("没有匹配$reason 的新闻，调整平台、范围或清空筛选后可查看其他稿件。"))
             return
         }
         visible.forEachIndexed { index, item ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(dp(14), dp(14), dp(14), dp(14))
+                setPadding(dp(12), dp(11), dp(12), dp(11))
                 background = rounded(
                     Color.argb(230, 255, 253, 248),
-                    22,
+                    18,
                     line,
                     1
                 )
@@ -1127,31 +1052,31 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 text = (index + 1).toString()
                 gravity = Gravity.CENTER
                 setTextColor(panel)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 typeface = Typeface.DEFAULT_BOLD
                 includeFontPadding = false
                 background = rounded(red, 13, null, 0)
-            }, LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                setMargins(0, 0, dp(12), 0)
+            }, LinearLayout.LayoutParams(dp(30), dp(30)).apply {
+                setMargins(0, 0, dp(10), 0)
             })
             row.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(context).apply {
                     text = item.title
                     setTextColor(if (item.read) inkSoft else ink)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
                     typeface = serifBold
-                    setLineSpacing(0f, 1.18f)
-                    maxLines = 2
+                    setLineSpacing(0f, 1.12f)
+                    maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                 })
                 val time = item.publishedAt.substringAfter(" ", item.publishedAt).take(5).ifBlank { "未知" }
                 addView(metaBadges(listOf(item.source, item.scope.ifBlank { "综合" }, time)), LinearLayout.LayoutParams(-1, -2).apply {
-                    setMargins(0, dp(8), 0, 0)
+                    setMargins(0, dp(6), 0, 0)
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             row.addView(StrokeIconView(this, "chevron", muted), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
-                setMargins(dp(10), dp(9), 0, 0)
+                setMargins(dp(8), dp(7), 0, 0)
             })
             row.isClickable = true
             row.isFocusable = true
@@ -1167,8 +1092,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 speakSelected()
                 true
             }
-            content.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(0, 0, 0, dp(10))
+            container.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(0, 0, 0, dp(8))
             })
         }
     }
@@ -1521,8 +1446,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         return "$time  $weekday"
     }
 
+    private fun reportSampleItems(): List<NewsItem> {
+        val base = visibleItems().ifEmpty { items }
+        if (base.isEmpty()) return emptyList()
+        val grouped = base.groupBy { it.source.ifBlank { "未知来源" } }
+        return grouped.values
+            .sortedByDescending { it.size }
+            .flatMap { group -> group.take(10) }
+    }
+
     private fun briefingText(): String {
-        val list = visibleItems().ifEmpty { items }.take(REPORT_ITEM_LIMIT)
+        val list = reportSampleItems()
         if (list.isEmpty()) {
             return "暂无可生成简报的新闻。请先刷新，或检查抓取范围是否启用。"
         }
@@ -1551,7 +1485,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun dailyReportText(): String {
-        val list = visibleItems().ifEmpty { items }.take(REPORT_ITEM_LIMIT)
+        val list = reportSampleItems()
         if (list.isEmpty()) {
             return "暂无可生成日报的新闻。请先刷新，或检查抓取范围是否启用。"
         }
@@ -1608,7 +1542,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun hotTopics(): List<HotTopic> {
-        val list = visibleItems().ifEmpty { items }.take(REPORT_ITEM_LIMIT)
+        val list = reportSampleItems()
         if (list.isEmpty()) return emptyList()
         val buckets = linkedMapOf<String, MutableList<NewsItem>>()
         list.forEach { item ->
@@ -2311,64 +2245,43 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabBar.visibility = View.VISIBLE
         content.removeAllViews()
         renderTabs()
-        content.setPadding(dp(14), dp(14), dp(14), dp(20))
-        val sources = store.sources()
-        val diagnostics = store.sourceDiagnostics()
-        val sourceOkCount = diagnostics.count { it.success }.takeIf { diagnostics.isNotEmpty() }
-            ?: sources.count { it.enabled }
-        content.addView(settingCard(
-            title = "抓取范围设置",
-            desc = "管理默认媒体源和自定义热榜源，支持新增、编辑、启停、测试、导入和导出。",
-            fields = listOf(
-                "启用来源" to "${sources.count { it.enabled }} / ${sources.size}",
-                "最近诊断" to "$sourceOkCount 个来源在线"
-            ),
-            primary = "进入",
-            secondary = "导出配置",
-            primaryAction = { showSources() },
-            secondaryAction = { exportSources() }
-        ))
-
-        val ai = store.aiSettings()
-        content.addView(settingCard(
-            title = "新闻锐评大模型",
-            desc = "OpenAI-compatible Chat Completions，自检直接使用当前配置。",
-            fields = listOf(
-                "Endpoint" to ai.endpoint,
-                "Model" to ai.model
-            ),
-            primary = "保存",
-            secondary = "测试锐评",
-            primaryAction = { editAiSettingsDialog(ai) },
-            secondaryAction = { testAiSettings(store.aiSettings()) }
-        ))
-
-        val voice = store.voiceSettings()
-        content.addView(settingCard(
-            title = "语音播报",
-            desc = "默认使用 MiMo Chat Audio；远程不可用时自动回退 Android 本地 TTS。",
-            fields = listOf(
-                "Mode" to if (voice.mode == "local") "Android 本地 TTS" else "远程语音模型",
-                "Voice" to if (voice.mode == "local") "系统中文语音包" else "${voice.voice} / ${voice.model}"
-            ),
-            primary = "保存",
-            secondary = "测试语音",
-            primaryAction = { editVoiceSettingsDialog(voice) },
-            secondaryAction = { testVoiceSettings(store.voiceSettings()) }
-        ))
-
-        content.addView(settingCard(
-            title = "应用更新",
-            desc = "从 GitHub Releases 检查公开发布的 APK，新版本可直接下载并安装。",
-            fields = listOf(
-                "当前版本" to BuildConfig.VERSION_NAME,
-                "发布仓库" to GITHUB_REPO
-            ),
-            primary = "检测更新",
-            secondary = "Release",
-            primaryAction = { checkAppUpdate() },
-            secondaryAction = { openReleasesPage() }
-        ))
+        headerArea.removeAllViews()
+        content.setPadding(dp(14), 0, dp(14), dp(20))
+        val pinned = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(10))
+        }
+        pinned.addView(settingsHeader())
+        headerArea.addView(pinned)
+        val bodyScroll = ScrollView(this).apply {
+            isFillViewport = true
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(20))
+            addView(settingMenuCard(
+                title = "新闻源配置",
+                desc = "配置抓取范围、启停和测试。",
+                icon = "search"
+            ) { showSources() })
+            addView(settingMenuCard(
+                title = "锐评模型配置",
+                desc = "配置大模型接口、提示词和自检。",
+                icon = "edit"
+            ) { editAiSettingsDialog(store.aiSettings()) })
+            addView(settingMenuCard(
+                title = "语音播放配置",
+                desc = "配置本地 TTS 或远程语音接口。",
+                icon = "speaker"
+            ) { editVoiceSettingsDialog(store.voiceSettings()) })
+            addView(settingMenuCard(
+                title = "检查更新",
+                desc = "比对 GitHub 最新 Release 并提示是否升级。",
+                icon = "refresh"
+            ) { checkAppUpdate() })
+        }
+        bodyScroll.addView(body)
+        content.addView(bodyScroll, LinearLayout.LayoutParams(-1, -1))
     }
 
     private fun editAiSettingsDialog(settings: AiSettings) {
@@ -2449,6 +2362,72 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 showSettings()
         }
         dialog.show()
+    }
+
+    private fun settingsHeader(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = rounded(Color.argb(224, 255, 253, 248), 24, line, 1)
+        elevation = dp(2).toFloat()
+        addView(TextView(context).apply {
+            text = "设置"
+            setTextColor(ink)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            typeface = serifBold
+            includeFontPadding = false
+        })
+        addView(TextView(context).apply {
+            text = "统一管理新闻源、锐评模型、语音播放和应用更新。"
+            setTextColor(inkSoft)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = serif
+            setLineSpacing(0f, 1.2f)
+            setPadding(0, dp(8), 0, 0)
+            includeFontPadding = false
+        })
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(12))
+        }
+    }
+
+    private fun settingMenuCard(title: String, desc: String, icon: String, action: () -> Unit): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        isClickable = true
+        isFocusable = true
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = rounded(Color.argb(224, 255, 253, 248), 22, line, 1)
+        elevation = dp(1).toFloat()
+        addClickFeedback(22)
+        setOnClickListener { action() }
+        addView(StrokeIconView(context, icon, redDeep), LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+            setMargins(0, 0, dp(12), 0)
+        })
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = title
+                setTextColor(ink)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+                typeface = serifBold
+                includeFontPadding = false
+            })
+            addView(TextView(context).apply {
+                text = desc
+                setTextColor(muted)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                typeface = serif
+                setLineSpacing(0f, 1.18f)
+                setPadding(0, dp(6), 0, 0)
+                includeFontPadding = false
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(StrokeIconView(context, "chevron", muted), LinearLayout.LayoutParams(dp(16), dp(16)))
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, 0, 0, dp(10))
+        }
     }
 
     private fun styledFormDialog(
@@ -2874,8 +2853,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         styledActionDialog(
             title = "已是最新版本",
             items = listOf(
-                DialogActionItem("当前 ${BuildConfig.VERSION_NAME}，最新 ${release.versionName}", "check") {},
-                DialogActionItem("查看 Releases", "share") { openReleasesPage() }
+                DialogActionItem("当前 ${BuildConfig.VERSION_NAME}，最新 ${release.versionName}", "check") {}
             )
         ).show()
     }
